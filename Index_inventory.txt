@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Scan Alat - Inventory</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, Roboto, Arial, sans-serif;
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 20px 16px 60px;
+      background: #f5f6f8;
+      color: #1f2430;
+    }
+    h1 { font-size: 20px; margin-bottom: 4px; }
+    p.sub { color: #6b7280; margin-top: 0; font-size: 14px; }
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 18px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .mode-btn {
+      width: 100%;
+      padding: 16px;
+      font-size: 16px;
+      font-weight: 600;
+      border: none;
+      border-radius: 10px;
+      margin-bottom: 12px;
+      cursor: pointer;
+      text-align: left;
+    }
+    .mode-btn small { display: block; font-weight: 400; font-size: 12px; opacity: 0.85; margin-top: 2px; }
+    #btn-mode-pinjam { background: #2563eb; color: #fff; }
+    #btn-mode-pinjam-project { background: #7c3aed; color: #fff; }
+    #btn-mode-kembali { background: #16a34a; color: #fff; }
+    label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; color: #374151; }
+    input, select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 15px;
+    }
+    #reader-pinjam, #reader-kembali, #reader-project { border-radius: 10px; overflow: hidden; margin-top: 12px; }
+    .info-box {
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      background: #f0f9ff;
+      border: 1px solid #bae6fd;
+    }
+    .info-box.error { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+    .submit-btn {
+      width: 100%;
+      padding: 14px;
+      margin-top: 16px;
+      background: #111827;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .submit-btn:disabled { background: #9ca3af; cursor: not-allowed; }
+    .secondary-btn {
+      width: 100%;
+      padding: 12px;
+      margin-top: 8px;
+      background: #fff;
+      color: #374151;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .back-link { display: inline-block; margin-top: 16px; color: #2563eb; font-size: 14px; cursor: pointer; }
+    .status-msg { margin-top: 16px; padding: 14px; border-radius: 8px; font-size: 14px; }
+    .status-msg.success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+    .status-msg.error { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
+    .hidden { display: none; }
+    .divider { text-align: center; color: #9ca3af; font-size: 12px; margin: 20px 0 12px; position: relative; }
+    .divider::before, .divider::after { content: ''; position: absolute; top: 50%; width: 40%; height: 1px; background: #e5e7eb; }
+    .divider::before { left: 0; }
+    .divider::after { right: 0; }
+    ul.item-list { list-style: none; padding: 0; margin: 10px 0; }
+    ul.item-list li {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 12px; background: #f9fafb; border: 1px solid #e5e7eb;
+      border-radius: 8px; margin-bottom: 6px; font-size: 14px;
+    }
+    ul.item-list li button {
+      background: none; border: none; color: #b91c1c; font-weight: 700;
+      cursor: pointer; font-size: 16px; padding: 0 4px;
+    }
+    .count-badge {
+      display: inline-block; background: #7c3aed; color: #fff;
+      border-radius: 999px; padding: 2px 10px; font-size: 13px; font-weight: 600;
+    }
+    .config-warning {
+      background: #fffbeb; border: 1px solid #fde68a; color: #92400e;
+      padding: 12px; border-radius: 8px; font-size: 13px; margin-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Scan Alat</h1>
+  <p class="sub">Pinjam atau kembalikan alat dengan scan QR code</p>
+
+  <div id="config-warning" class="config-warning hidden">
+    ⚠️ <b>API_URL / API_TOKEN belum diisi.</b> Buka file ini, cari bagian
+    <code>const API_URL</code> dan <code>const API_TOKEN</code> di dekat awal
+    tag &lt;script&gt;, lalu isi dengan URL Web App Apps Script kamu dan
+    token yang sama dengan CONFIG.API_TOKEN di Code.gs.
+  </div>
+
+  <div id="mode-select" class="card">
+    <button id="btn-mode-pinjam" class="mode-btn" onclick="pilihMode('pinjam')">
+      📤 Pinjam Alat (1 alat)
+      <small>Untuk peminjaman satuan, cepat</small>
+    </button>
+    <button id="btn-mode-pinjam-project" class="mode-btn" onclick="pilihMode('pinjam-project')">
+      📦 Pinjam untuk Project (banyak alat)
+      <small>Scan beberapa alat sekaligus, 1 ID Transaksi</small>
+    </button>
+    <button id="btn-mode-kembali" class="mode-btn" onclick="pilihMode('kembali')">
+      📥 Kembalikan Alat
+      <small>Per alat, atau sekaligus by ID Transaksi</small>
+    </button>
+  </div>
+
+  <!-- FORM PINJAM (INDIVIDUAL) -->
+  <div id="form-pinjam" class="card hidden">
+    <label>Nama Peminjam</label>
+    <input id="nama" type="text" placeholder="Nama lengkap">
+
+    <label>Email</label>
+    <input id="email" type="email" placeholder="nama@email.com">
+
+    <label>Departemen</label>
+    <input id="departemen" type="text" placeholder="Misal: Produksi, Kamera, Editing">
+
+    <label>Rencana Tanggal Kembali</label>
+    <input id="tanggalKembali" type="date">
+
+    <label>Scan QR Alat</label>
+    <div id="reader-pinjam"></div>
+    <div id="alat-info-pinjam"></div>
+
+    <button id="btn-submit-pinjam" class="submit-btn" disabled onclick="submitPinjam()">Konfirmasi Peminjaman</button>
+    <div class="back-link" onclick="kembaliKeMenu()">← Kembali ke menu</div>
+    <div id="hasil-pinjam"></div>
+  </div>
+
+  <!-- FORM PINJAM PROJECT (BATCH) -->
+  <div id="form-pinjam-project" class="card hidden">
+    <label>Nama Peminjam</label>
+    <input id="p-nama" type="text" placeholder="Nama lengkap">
+
+    <label>Email</label>
+    <input id="p-email" type="email" placeholder="nama@email.com">
+
+    <label>Departemen</label>
+    <input id="p-departemen" type="text" placeholder="Misal: Produksi, Kamera">
+
+    <label>Nama / Kode Project</label>
+    <input id="p-project" type="text" placeholder="Misal: Dokumenter Laut Selatan">
+
+    <label>Rencana Tanggal Kembali (semua alat)</label>
+    <input id="p-tanggalKembali" type="date">
+
+    <label>Scan Alat (bisa berkali-kali)</label>
+    <div id="reader-project"></div>
+    <div id="scan-info-project"></div>
+
+    <div class="divider">Daftar alat di-scan <span class="count-badge" id="jumlah-alat-project">0</span></div>
+    <ul class="item-list" id="daftar-alat-project"></ul>
+
+    <button id="btn-submit-project" class="submit-btn" disabled onclick="submitPinjamProject()">Pinjam Semua Alat Ini</button>
+    <div class="back-link" onclick="kembaliKeMenu()">← Kembali ke menu</div>
+    <div id="hasil-pinjam-project"></div>
+  </div>
+
+  <!-- FORM KEMBALI -->
+  <div id="form-kembali" class="card hidden">
+    <label>Scan QR Alat yang Dikembalikan (satuan)</label>
+    <div id="reader-kembali"></div>
+    <div id="alat-info-kembali"></div>
+
+    <label>Kondisi Alat Saat Kembali</label>
+    <select id="kondisi">
+      <option value="Baik">Baik</option>
+      <option value="Perlu Cek">Perlu Cek</option>
+      <option value="Rusak">Rusak</option>
+    </select>
+
+    <button id="btn-submit-kembali" class="submit-btn" disabled onclick="submitKembali()">Konfirmasi Pengembalian</button>
+    <div id="hasil-kembali"></div>
+
+    <div class="divider">atau kembalikan sekaligus (Project)</div>
+
+    <label>ID Transaksi Project</label>
+    <input id="k-idTransaksi" type="text" placeholder="Misal: PRJ-240910-153000-42">
+    <button class="secondary-btn" onclick="cariTransaksiProject()">Cari Alat di Transaksi Ini</button>
+
+    <div id="daftar-transaksi-project"></div>
+
+    <div class="back-link" onclick="kembaliKeMenu()">← Kembali ke menu</div>
+  </div>
+
+<script>
+  // ====================================================================
+  // KONFIGURASI — WAJIB DIISI sebelum file ini di-upload ke hosting.
+  // ====================================================================
+  // API_URL: URL Web App Apps Script kamu, dari Deploy > Manage deployments
+  //          (yang berakhiran /exec), CONTOH:
+  //          'https://script.google.com/macros/s/AKfycb.../exec'
+  // API_TOKEN: harus SAMA PERSIS dengan nilai CONFIG.API_TOKEN di Code.gs
+  const API_URL = 'https://script.google.com/a/macros/murup.id/s/AKfycbxoKpFQGcswc_6iXoag8EeDJAdob6uUQcpZND8RJgVbqvuxa2BlQAhmPuk2myp31rxNTw/exec';
+  const API_TOKEN = 'Inventory_Alat_Murup123!';
+  // ====================================================================
+
+  if (API_URL.indexOf('PASTE_URL') !== -1 || API_TOKEN.indexOf('GANTI-DENGAN') !== -1) {
+    document.getElementById('config-warning').classList.remove('hidden');
+  }
+
+  /**
+   * Panggil backend Apps Script lewat fetch(). Dikirim dengan Content-Type
+   * "text/plain" (BUKAN application/json) supaya browser menganggapnya
+   * "simple request" dan tidak memicu preflight OPTIONS, yang biasanya
+   * gagal ditangani Apps Script (tidak bisa set header CORS custom di sana).
+   */
+  function callApi(action, payload) {
+    return fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ token: API_TOKEN, action: action, payload: payload || {} })
+    })
+      .then(res => {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      });
+  }
+
+  let scannedIdAlat = null;
+  let currentScanner = null;
+  let daftarAlatProject = []; // [{idAlat, namaAlat}]
+  let idTransaksiDicari = null;
+
+  function pilihMode(mode) {
+    document.getElementById('mode-select').classList.add('hidden');
+    if (mode === 'pinjam') {
+      document.getElementById('form-pinjam').classList.remove('hidden');
+      startScanner('reader-pinjam', onScanPinjam);
+    } else if (mode === 'pinjam-project') {
+      document.getElementById('form-pinjam-project').classList.remove('hidden');
+      startScanner('reader-project', onScanProject, true);
+    } else {
+      document.getElementById('form-kembali').classList.remove('hidden');
+      startScanner('reader-kembali', onScanKembali);
+    }
+  }
+
+  function kembaliKeMenu() {
+    if (currentScanner) {
+      currentScanner.stop().catch(() => {});
+      currentScanner = null;
+    }
+    ['form-pinjam', 'form-pinjam-project', 'form-kembali'].forEach(id => document.getElementById(id).classList.add('hidden'));
+    document.getElementById('mode-select').classList.remove('hidden');
+
+    scannedIdAlat = null;
+    daftarAlatProject = [];
+    idTransaksiDicari = null;
+    lastScanTimeProject = 0;
+    ['alat-info-pinjam', 'alat-info-kembali', 'hasil-pinjam', 'hasil-kembali',
+     'scan-info-project', 'daftar-alat-project', 'hasil-pinjam-project', 'daftar-transaksi-project'
+    ].forEach(id => document.getElementById(id).innerHTML = '');
+    document.getElementById('jumlah-alat-project').innerText = '0';
+    document.getElementById('btn-submit-pinjam').disabled = true;
+    document.getElementById('btn-submit-project').disabled = true;
+    document.getElementById('btn-submit-kembali').disabled = true;
+  }
+
+  function startScanner(elementId, onDecoded, continuous) {
+    currentScanner = new Html5Qrcode(elementId);
+    currentScanner.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: 220 },
+      (decodedText) => {
+        if (continuous) {
+          onDecoded(decodedText.trim());
+        } else {
+          currentScanner.stop().catch(() => {});
+          onDecoded(decodedText.trim());
+        }
+      },
+      () => { /* ignore scan-frame errors */ }
+    ).catch(() => {
+      document.getElementById(elementId).innerHTML =
+        '<div class="info-box error">Tidak bisa akses kamera. Pastikan izin kamera diaktifkan di browser.</div>';
+    });
+  }
+
+  // ---------- MODE PINJAM (INDIVIDUAL) ----------
+  function onScanPinjam(idAlat) {
+    scannedIdAlat = idAlat;
+    callApi('getAlatInfo', { idAlat: idAlat })
+      .then(showAlatInfoPinjam)
+      .catch(err => {
+        document.getElementById('alat-info-pinjam').innerHTML =
+          '<div class="info-box error">Gagal menghubungi server: ' + err.message + '</div>';
+      });
+  }
+
+  function showAlatInfoPinjam(info) {
+    const div = document.getElementById('alat-info-pinjam');
+    if (!info.found) {
+      div.innerHTML = '<div class="info-box error">Alat dengan kode "' + scannedIdAlat + '" tidak ditemukan.</div>';
+      return;
+    }
+    if (info.status !== 'Tersedia') {
+      div.innerHTML = '<div class="info-box error">' + info.namaAlat + ' sedang tidak tersedia (status: ' + info.status + ').</div>';
+      return;
+    }
+    div.innerHTML = '<div class="info-box">✅ Alat terdeteksi: <b>' + info.namaAlat + '</b> (' + scannedIdAlat + ')</div>';
+    document.getElementById('btn-submit-pinjam').disabled = false;
+  }
+
+  function submitPinjam() {
+    const nama = document.getElementById('nama').value;
+    const email = document.getElementById('email').value;
+    const departemen = document.getElementById('departemen').value;
+    const rencanaKembali = document.getElementById('tanggalKembali').value;
+
+    if (!nama || !email || !rencanaKembali) {
+      document.getElementById('hasil-pinjam').innerHTML =
+        '<div class="status-msg error">Mohon lengkapi nama, email, dan tanggal rencana kembali.</div>';
+      return;
+    }
+
+    document.getElementById('btn-submit-pinjam').disabled = true;
+    document.getElementById('btn-submit-pinjam').innerText = 'Memproses...';
+
+    callApi('prosesPeminjaman', {
+      nama: nama, email: email, departemen: departemen,
+      idAlat: scannedIdAlat, rencanaKembali: rencanaKembali
+    }).then(onSuccessPinjam).catch(onErrorPinjam);
+  }
+
+  function onSuccessPinjam(result) {
+    document.getElementById('btn-submit-pinjam').innerText = 'Konfirmasi Peminjaman';
+    if (result.success) {
+      document.getElementById('hasil-pinjam').innerHTML =
+        '<div class="status-msg success">✅ Berhasil! ID Transaksi: <b>' + result.idTransaksi + '</b><br>Konfirmasi juga dikirim ke email.</div>';
+    } else {
+      document.getElementById('btn-submit-pinjam').disabled = false;
+      document.getElementById('hasil-pinjam').innerHTML = '<div class="status-msg error">' + result.message + '</div>';
+    }
+  }
+
+  function onErrorPinjam(err) {
+    document.getElementById('btn-submit-pinjam').disabled = false;
+    document.getElementById('btn-submit-pinjam').innerText = 'Konfirmasi Peminjaman';
+    document.getElementById('hasil-pinjam').innerHTML = '<div class="status-msg error">Terjadi error: ' + err.message + '</div>';
+  }
+
+  // ---------- MODE PINJAM PROJECT (BATCH) ----------
+  let sedangCekAlatProject = false;
+  let lastScanTimeProject = 0;
+  const JEDA_SCAN_MS = 1500; // jeda minimum antar scan sukses, cegah spam saat kamera masih lihat QR yang sama
+
+  function onScanProject(idAlat) {
+    const now = Date.now();
+    if (now - lastScanTimeProject < JEDA_SCAN_MS) return;
+    if (sedangCekAlatProject) return;
+    if (daftarAlatProject.some(a => a.idAlat === idAlat)) {
+      lastScanTimeProject = now;
+      document.getElementById('scan-info-project').innerHTML =
+        '<div class="info-box error">Alat "' + idAlat + '" sudah ada di daftar.</div>';
+      return;
+    }
+    sedangCekAlatProject = true;
+    callApi('getAlatInfo', { idAlat: idAlat })
+      .then(info => {
+        sedangCekAlatProject = false;
+        lastScanTimeProject = Date.now();
+        handleScanProjectResult(idAlat, info);
+      })
+      .catch(err => {
+        sedangCekAlatProject = false;
+        document.getElementById('scan-info-project').innerHTML =
+          '<div class="info-box error">Gagal menghubungi server: ' + err.message + '</div>';
+      });
+  }
+
+  function handleScanProjectResult(idAlat, info) {
+    const div = document.getElementById('scan-info-project');
+    if (!info.found) {
+      div.innerHTML = '<div class="info-box error">Alat "' + idAlat + '" tidak ditemukan.</div>';
+      return;
+    }
+    if (info.status !== 'Tersedia') {
+      div.innerHTML = '<div class="info-box error">' + info.namaAlat + ' sedang tidak tersedia (status: ' + info.status + ').</div>';
+      return;
+    }
+    daftarAlatProject.push({ idAlat: idAlat, namaAlat: info.namaAlat });
+    div.innerHTML = '<div class="info-box">✅ Ditambahkan: <b>' + info.namaAlat + '</b> (' + idAlat + '). Scan alat berikutnya, atau lanjut isi form di bawah.</div>';
+    renderDaftarAlatProject();
+  }
+
+  function renderDaftarAlatProject() {
+    const ul = document.getElementById('daftar-alat-project');
+    ul.innerHTML = daftarAlatProject.map((a, idx) =>
+      '<li>' + a.namaAlat + ' (' + a.idAlat + ')<button onclick="hapusAlatProject(' + idx + ')">✕</button></li>'
+    ).join('');
+    document.getElementById('jumlah-alat-project').innerText = daftarAlatProject.length;
+    checkFormProjectValid();
+  }
+
+  function hapusAlatProject(idx) {
+    daftarAlatProject.splice(idx, 1);
+    renderDaftarAlatProject();
+  }
+
+  function checkFormProjectValid() {
+    const nama = document.getElementById('p-nama').value;
+    const email = document.getElementById('p-email').value;
+    const tanggal = document.getElementById('p-tanggalKembali').value;
+    document.getElementById('btn-submit-project').disabled =
+      !(nama && email && tanggal && daftarAlatProject.length > 0);
+  }
+  document.getElementById('p-nama').addEventListener('input', checkFormProjectValid);
+  document.getElementById('p-email').addEventListener('input', checkFormProjectValid);
+  document.getElementById('p-tanggalKembali').addEventListener('input', checkFormProjectValid);
+
+  function submitPinjamProject() {
+    const nama = document.getElementById('p-nama').value;
+    const email = document.getElementById('p-email').value;
+    const departemen = document.getElementById('p-departemen').value;
+    const project = document.getElementById('p-project').value;
+    const rencanaKembali = document.getElementById('p-tanggalKembali').value;
+
+    document.getElementById('btn-submit-project').disabled = true;
+    document.getElementById('btn-submit-project').innerText = 'Memproses...';
+
+    callApi('prosesPeminjamanBatch', {
+      nama: nama, email: email, departemen: departemen, project: project,
+      rencanaKembali: rencanaKembali,
+      daftarAlat: daftarAlatProject.map(a => a.idAlat)
+    }).then(onSuccessPinjamProject).catch(onErrorPinjamProject);
+  }
+
+  function onSuccessPinjamProject(result) {
+    document.getElementById('btn-submit-project').innerText = 'Pinjam Semua Alat Ini';
+    if (result.success) {
+      document.getElementById('hasil-pinjam-project').innerHTML =
+        '<div class="status-msg success">✅ Berhasil! ' + result.jumlahAlat + ' alat dipinjam dengan ID Transaksi: <b>' + result.idTransaksi + '</b><br>Simpan ID ini untuk mengembalikan semua sekaligus nanti.</div>';
+    } else {
+      document.getElementById('btn-submit-project').disabled = false;
+      document.getElementById('hasil-pinjam-project').innerHTML = '<div class="status-msg error">' + result.message + '</div>';
+    }
+  }
+
+  function onErrorPinjamProject(err) {
+    document.getElementById('btn-submit-project').disabled = false;
+    document.getElementById('btn-submit-project').innerText = 'Pinjam Semua Alat Ini';
+    document.getElementById('hasil-pinjam-project').innerHTML = '<div class="status-msg error">Terjadi error: ' + err.message + '</div>';
+  }
+
+  // ---------- MODE KEMBALI (SATUAN) ----------
+  function onScanKembali(idAlat) {
+    scannedIdAlat = idAlat;
+    callApi('getTransaksiAktif', { idAlat: idAlat })
+      .then(showAlatInfoKembali)
+      .catch(err => {
+        document.getElementById('alat-info-kembali').innerHTML =
+          '<div class="info-box error">Gagal menghubungi server: ' + err.message + '</div>';
+      });
+  }
+
+  function showAlatInfoKembali(info) {
+    const div = document.getElementById('alat-info-kembali');
+    if (!info.found) {
+      div.innerHTML = '<div class="info-box error">Tidak ada transaksi peminjaman aktif untuk kode "' + scannedIdAlat + '".</div>';
+      return;
+    }
+    div.innerHTML = '<div class="info-box">📦 <b>' + info.namaAlat + '</b><br>Dipinjam oleh: ' + info.namaPeminjam + ' (' + info.idTransaksi + ')</div>';
+    document.getElementById('btn-submit-kembali').disabled = false;
+  }
+
+  function submitKembali() {
+    const kondisi = document.getElementById('kondisi').value;
+    document.getElementById('btn-submit-kembali').disabled = true;
+    document.getElementById('btn-submit-kembali').innerText = 'Memproses...';
+
+    callApi('prosesPengembalian', { idAlat: scannedIdAlat, kondisi: kondisi })
+      .then(onSuccessKembali).catch(onErrorKembali);
+  }
+
+  function onSuccessKembali(result) {
+    document.getElementById('btn-submit-kembali').innerText = 'Konfirmasi Pengembalian';
+    if (result.success) {
+      document.getElementById('hasil-kembali').innerHTML =
+        '<div class="status-msg success">✅ Alat berhasil dikembalikan dan status diperbarui.</div>';
+    } else {
+      document.getElementById('btn-submit-kembali').disabled = false;
+      document.getElementById('hasil-kembali').innerHTML = '<div class="status-msg error">' + result.message + '</div>';
+    }
+  }
+
+  function onErrorKembali(err) {
+    document.getElementById('btn-submit-kembali').disabled = false;
+    document.getElementById('btn-submit-kembali').innerText = 'Konfirmasi Pengembalian';
+    document.getElementById('hasil-kembali').innerHTML = '<div class="status-msg error">Terjadi error: ' + err.message + '</div>';
+  }
+
+  // ---------- MODE KEMBALI PROJECT (BATCH) ----------
+  function cariTransaksiProject() {
+    const idTransaksi = document.getElementById('k-idTransaksi').value.trim();
+    if (!idTransaksi) return;
+    idTransaksiDicari = idTransaksi;
+    document.getElementById('daftar-transaksi-project').innerHTML = '<div class="info-box">Mencari...</div>';
+    callApi('getDaftarAlatByTransaksi', { idTransaksi: idTransaksi })
+      .then(showDaftarTransaksiProject)
+      .catch(err => {
+        document.getElementById('daftar-transaksi-project').innerHTML =
+          '<div class="info-box error">Gagal menghubungi server: ' + err.message + '</div>';
+      });
+  }
+
+  function showDaftarTransaksiProject(hasil) {
+    const div = document.getElementById('daftar-transaksi-project');
+    if (!hasil.found) {
+      div.innerHTML = '<div class="info-box error">ID Transaksi tidak ditemukan atau semua alat sudah dikembalikan.</div>';
+      return;
+    }
+    let html = '<div class="info-box">Ditemukan ' + hasil.daftar.length + ' alat:</div>';
+    html += '<ul class="item-list">' + hasil.daftar.map(a => '<li>' + a.namaAlat + ' (' + a.idAlat + ')</li>').join('') + '</ul>';
+    html += '<label>Kondisi Semua Alat Saat Kembali</label>';
+    html += '<select id="k-kondisi-project"><option value="Baik">Baik</option><option value="Perlu Cek">Perlu Cek</option><option value="Rusak">Rusak</option></select>';
+    html += '<button class="submit-btn" onclick="submitKembaliProject(' + hasil.daftar.length + ')">Kembalikan Semua (' + hasil.daftar.length + ')</button>';
+    html += '<div id="hasil-kembali-project"></div>';
+    div.innerHTML = html;
+  }
+
+  function submitKembaliProject(jumlah) {
+    const kondisi = document.getElementById('k-kondisi-project').value;
+    callApi('prosesPengembalianBatch', { idTransaksi: idTransaksiDicari, kondisi: kondisi })
+      .then(onSuccessKembaliProject).catch(onErrorKembaliProject);
+  }
+
+  function onSuccessKembaliProject(result) {
+    const div = document.getElementById('hasil-kembali-project');
+    if (result.success) {
+      div.innerHTML = '<div class="status-msg success">✅ ' + result.jumlahAlat + ' alat berhasil dikembalikan sekaligus.</div>';
+    } else {
+      div.innerHTML = '<div class="status-msg error">' + result.message + '</div>';
+    }
+  }
+
+  function onErrorKembaliProject(err) {
+    document.getElementById('hasil-kembali-project').innerHTML = '<div class="status-msg error">Terjadi error: ' + err.message + '</div>';
+  }
+</script>
+
+</body>
+</html>
