@@ -97,6 +97,7 @@
       padding: 10px 12px; background: #f9fafb; border: 1px solid #e5e7eb;
       border-radius: 8px; margin-bottom: 6px; font-size: 14px;
     }
+    ul.item-list li small { display: block; color: #6b7280; font-weight: 400; }
     ul.item-list li button {
       background: none; border: none; color: #b91c1c; font-weight: 700;
       cursor: pointer; font-size: 16px; padding: 0 4px;
@@ -105,6 +106,7 @@
       display: inline-block; background: #7c3aed; color: #fff;
       border-radius: 999px; padding: 2px 10px; font-size: 13px; font-weight: 600;
     }
+    .count-badge.green { background: #16a34a; }
     .config-warning {
       background: #fffbeb; border: 1px solid #fde68a; color: #92400e;
       padding: 12px; border-radius: 8px; font-size: 13px; margin-bottom: 16px;
@@ -134,7 +136,7 @@
     </button>
     <button id="btn-mode-kembali" class="mode-btn" onclick="pilihMode('kembali')">
       📥 Kembalikan Alat
-      <small>Per alat, atau sekaligus by ID Transaksi</small>
+      <small>Scan berkali-kali untuk item berbeda, atau sekaligus by ID Transaksi</small>
     </button>
   </div>
 
@@ -192,21 +194,24 @@
 
   <!-- FORM KEMBALI -->
   <div id="form-kembali" class="card hidden">
-    <label>Scan QR Alat yang Dikembalikan (satuan)</label>
+    <label>Scan QR Alat yang Dikembalikan (bisa berkali-kali, item berbeda)</label>
     <div id="reader-kembali"></div>
-    <div id="alat-info-kembali"></div>
+    <div id="scan-info-kembali"></div>
 
-    <label>Kondisi Alat Saat Kembali</label>
+    <div class="divider">Daftar alat di-scan <span class="count-badge green" id="jumlah-alat-kembali">0</span></div>
+    <ul class="item-list" id="daftar-alat-kembali"></ul>
+
+    <label>Kondisi Alat Saat Kembali (berlaku untuk semua alat di atas)</label>
     <select id="kondisi">
       <option value="Baik">Baik</option>
       <option value="Perlu Cek">Perlu Cek</option>
       <option value="Rusak">Rusak</option>
     </select>
 
-    <button id="btn-submit-kembali" class="submit-btn" disabled onclick="submitKembali()">Konfirmasi Pengembalian</button>
+    <button id="btn-submit-kembali" class="submit-btn" disabled onclick="submitKembaliMulti()">Kembalikan Semua Alat Ini</button>
     <div id="hasil-kembali"></div>
 
-    <div class="divider">atau kembalikan sekaligus (Project)</div>
+    <div class="divider">atau kembalikan 1 project utuh by ID Transaksi</div>
 
     <label>ID Transaksi Project</label>
     <input id="k-idTransaksi" type="text" placeholder="Misal: PRJ-240910-153000-42">
@@ -221,24 +226,14 @@
   // ====================================================================
   // KONFIGURASI — WAJIB DIISI sebelum file ini di-upload ke hosting.
   // ====================================================================
-  // API_URL: URL Web App Apps Script kamu, dari Deploy > Manage deployments
-  //          (yang berakhiran /exec), CONTOH:
-  //          'https://script.google.com/macros/s/AKfycb.../exec'
-  // API_TOKEN: harus SAMA PERSIS dengan nilai CONFIG.API_TOKEN di Code.gs
   const API_URL = 'https://script.google.com/a/macros/murup.id/s/AKfycbxoKpFQGcswc_6iXoag8EeDJAdob6uUQcpZND8RJgVbqvuxa2BlQAhmPuk2myp31rxNTw/exec';
-  const API_TOKEN = 'Inventory_Alat_Murup123!';
+  const API_TOKEN = 'Inventory_Alat_Murup123';
   // ====================================================================
 
   if (API_URL.indexOf('PASTE_URL') !== -1 || API_TOKEN.indexOf('GANTI-DENGAN') !== -1) {
     document.getElementById('config-warning').classList.remove('hidden');
   }
 
-  /**
-   * Panggil backend Apps Script lewat fetch(). Dikirim dengan Content-Type
-   * "text/plain" (BUKAN application/json) supaya browser menganggapnya
-   * "simple request" dan tidak memicu preflight OPTIONS, yang biasanya
-   * gagal ditangani Apps Script (tidak bisa set header CORS custom di sana).
-   */
   function callApi(action, payload) {
     return fetch(API_URL, {
       method: 'POST',
@@ -253,20 +248,24 @@
 
   let scannedIdAlat = null;
   let currentScanner = null;
-  let daftarAlatProject = []; // [{idAlat, namaAlat}]
+  let daftarAlatProject = []; // [{idAlat, namaAlat}]  - mode Pinjam Project
+  let daftarAlatKembali = []; // [{idAlat, namaAlat, namaPeminjam}] - mode Kembalikan multi-scan
   let idTransaksiDicari = null;
+  let lastScanTimeProject = 0;
+  let lastScanTimeKembali = 0;
+  const JEDA_SCAN_MS = 1500; // jeda minimum antar scan sukses, cegah spam saat kamera masih lihat QR yang sama
 
   function pilihMode(mode) {
     document.getElementById('mode-select').classList.add('hidden');
     if (mode === 'pinjam') {
       document.getElementById('form-pinjam').classList.remove('hidden');
-      startScanner('reader-pinjam', onScanPinjam);
+      startScanner('reader-pinjam', onScanPinjam, false);
     } else if (mode === 'pinjam-project') {
       document.getElementById('form-pinjam-project').classList.remove('hidden');
       startScanner('reader-project', onScanProject, true);
     } else {
       document.getElementById('form-kembali').classList.remove('hidden');
-      startScanner('reader-kembali', onScanKembali);
+      startScanner('reader-kembali', onScanKembaliMulti, true);
     }
   }
 
@@ -280,12 +279,16 @@
 
     scannedIdAlat = null;
     daftarAlatProject = [];
+    daftarAlatKembali = [];
     idTransaksiDicari = null;
     lastScanTimeProject = 0;
-    ['alat-info-pinjam', 'alat-info-kembali', 'hasil-pinjam', 'hasil-kembali',
-     'scan-info-project', 'daftar-alat-project', 'hasil-pinjam-project', 'daftar-transaksi-project'
+    lastScanTimeKembali = 0;
+    ['alat-info-pinjam', 'hasil-pinjam',
+     'scan-info-project', 'daftar-alat-project', 'hasil-pinjam-project',
+     'scan-info-kembali', 'daftar-alat-kembali', 'hasil-kembali', 'daftar-transaksi-project'
     ].forEach(id => document.getElementById(id).innerHTML = '');
     document.getElementById('jumlah-alat-project').innerText = '0';
+    document.getElementById('jumlah-alat-kembali').innerText = '0';
     document.getElementById('btn-submit-pinjam').disabled = true;
     document.getElementById('btn-submit-project').disabled = true;
     document.getElementById('btn-submit-kembali').disabled = true;
@@ -376,8 +379,6 @@
 
   // ---------- MODE PINJAM PROJECT (BATCH) ----------
   let sedangCekAlatProject = false;
-  let lastScanTimeProject = 0;
-  const JEDA_SCAN_MS = 1500; // jeda minimum antar scan sukses, cegah spam saat kamera masih lihat QR yang sama
 
   function onScanProject(idAlat) {
     const now = Date.now();
@@ -477,54 +478,91 @@
     document.getElementById('hasil-pinjam-project').innerHTML = '<div class="status-msg error">Terjadi error: ' + err.message + '</div>';
   }
 
-  // ---------- MODE KEMBALI (SATUAN) ----------
-  function onScanKembali(idAlat) {
-    scannedIdAlat = idAlat;
+  // ---------- MODE KEMBALI: scan berkali-kali, item berbeda ----------
+  let sedangCekAlatKembali = false;
+
+  function onScanKembaliMulti(idAlat) {
+    const now = Date.now();
+    if (now - lastScanTimeKembali < JEDA_SCAN_MS) return;
+    if (sedangCekAlatKembali) return;
+    if (daftarAlatKembali.some(a => a.idAlat === idAlat)) {
+      lastScanTimeKembali = now;
+      document.getElementById('scan-info-kembali').innerHTML =
+        '<div class="info-box error">Alat "' + idAlat + '" sudah ada di daftar.</div>';
+      return;
+    }
+    sedangCekAlatKembali = true;
+    // Cek apakah alat ini punya transaksi peminjaman aktif (baik dari mode
+    // Pinjam satuan maupun Pinjam Project — tidak perlu tahu ID Transaksinya).
     callApi('getTransaksiAktif', { idAlat: idAlat })
-      .then(showAlatInfoKembali)
+      .then(info => {
+        sedangCekAlatKembali = false;
+        lastScanTimeKembali = Date.now();
+        handleScanKembaliResult(idAlat, info);
+      })
       .catch(err => {
-        document.getElementById('alat-info-kembali').innerHTML =
+        sedangCekAlatKembali = false;
+        document.getElementById('scan-info-kembali').innerHTML =
           '<div class="info-box error">Gagal menghubungi server: ' + err.message + '</div>';
       });
   }
 
-  function showAlatInfoKembali(info) {
-    const div = document.getElementById('alat-info-kembali');
+  function handleScanKembaliResult(idAlat, info) {
+    const div = document.getElementById('scan-info-kembali');
     if (!info.found) {
-      div.innerHTML = '<div class="info-box error">Tidak ada transaksi peminjaman aktif untuk kode "' + scannedIdAlat + '".</div>';
+      div.innerHTML = '<div class="info-box error">Tidak ada transaksi peminjaman aktif untuk kode "' + idAlat + '".</div>';
       return;
     }
-    div.innerHTML = '<div class="info-box">📦 <b>' + info.namaAlat + '</b><br>Dipinjam oleh: ' + info.namaPeminjam + ' (' + info.idTransaksi + ')</div>';
-    document.getElementById('btn-submit-kembali').disabled = false;
+    daftarAlatKembali.push({ idAlat: idAlat, namaAlat: info.namaAlat, namaPeminjam: info.namaPeminjam });
+    div.innerHTML = '<div class="info-box">✅ Ditambahkan: <b>' + info.namaAlat + '</b> (' + idAlat + '). Scan alat berikutnya, atau langsung konfirmasi di bawah.</div>';
+    renderDaftarAlatKembali();
   }
 
-  function submitKembali() {
+  function renderDaftarAlatKembali() {
+    const ul = document.getElementById('daftar-alat-kembali');
+    ul.innerHTML = daftarAlatKembali.map((a, idx) =>
+      '<li>' + a.namaAlat + ' (' + a.idAlat + ')<small>Dipinjam: ' + a.namaPeminjam + '</small><button onclick="hapusAlatKembali(' + idx + ')">✕</button></li>'
+    ).join('');
+    document.getElementById('jumlah-alat-kembali').innerText = daftarAlatKembali.length;
+    document.getElementById('btn-submit-kembali').disabled = daftarAlatKembali.length === 0;
+  }
+
+  function hapusAlatKembali(idx) {
+    daftarAlatKembali.splice(idx, 1);
+    renderDaftarAlatKembali();
+  }
+
+  function submitKembaliMulti() {
     const kondisi = document.getElementById('kondisi').value;
     document.getElementById('btn-submit-kembali').disabled = true;
     document.getElementById('btn-submit-kembali').innerText = 'Memproses...';
 
-    callApi('prosesPengembalian', { idAlat: scannedIdAlat, kondisi: kondisi })
-      .then(onSuccessKembali).catch(onErrorKembali);
+    callApi('prosesPengembalianMultiAlat', {
+      daftarAlat: daftarAlatKembali.map(a => a.idAlat),
+      kondisi: kondisi
+    }).then(onSuccessKembaliMulti).catch(onErrorKembaliMulti);
   }
 
-  function onSuccessKembali(result) {
-    document.getElementById('btn-submit-kembali').innerText = 'Konfirmasi Pengembalian';
+  function onSuccessKembaliMulti(result) {
+    document.getElementById('btn-submit-kembali').innerText = 'Kembalikan Semua Alat Ini';
     if (result.success) {
       document.getElementById('hasil-kembali').innerHTML =
-        '<div class="status-msg success">✅ Alat berhasil dikembalikan dan status diperbarui.</div>';
+        '<div class="status-msg success">✅ ' + result.jumlahAlat + ' alat berhasil dikembalikan.</div>';
+      daftarAlatKembali = [];
+      renderDaftarAlatKembali();
     } else {
       document.getElementById('btn-submit-kembali').disabled = false;
       document.getElementById('hasil-kembali').innerHTML = '<div class="status-msg error">' + result.message + '</div>';
     }
   }
 
-  function onErrorKembali(err) {
+  function onErrorKembaliMulti(err) {
     document.getElementById('btn-submit-kembali').disabled = false;
-    document.getElementById('btn-submit-kembali').innerText = 'Konfirmasi Pengembalian';
+    document.getElementById('btn-submit-kembali').innerText = 'Kembalikan Semua Alat Ini';
     document.getElementById('hasil-kembali').innerHTML = '<div class="status-msg error">Terjadi error: ' + err.message + '</div>';
   }
 
-  // ---------- MODE KEMBALI PROJECT (BATCH) ----------
+  // ---------- MODE KEMBALI PROJECT UTUH (BY ID TRANSAKSI) ----------
   function cariTransaksiProject() {
     const idTransaksi = document.getElementById('k-idTransaksi').value.trim();
     if (!idTransaksi) return;
