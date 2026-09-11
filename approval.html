@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Approval Peminjaman Alat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, Roboto, Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 20px 16px 60px; background: #f5f6f8; color: #1f2430; }
+    h1 { font-size: 20px; margin-bottom: 4px; }
+    p.sub { color: #6b7280; margin-top: 0; font-size: 14px; }
+    .card { background: #fff; border-radius: 12px; padding: 18px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; color: #374151; }
+    input, select, textarea { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 15px; font-family: inherit; }
+    textarea { resize: vertical; min-height: 60px; }
+    .config-warning { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; padding: 12px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; }
+    .hidden { display: none; }
+    .permintaan-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+    .permintaan-header { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
+    .permintaan-meta { font-size: 13px; color: #6b7280; margin-bottom: 10px; }
+    ul.item-list { list-style: none; padding: 0; margin: 8px 0; }
+    ul.item-list li { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 4px; font-size: 13px; }
+    ul.item-list li button { background: none; border: none; color: #b91c1c; font-weight: 700; cursor: pointer; font-size: 15px; padding: 0 4px; }
+    .search-result { max-height: 180px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; margin-top: 6px; }
+    .search-result-item { padding: 8px 10px; font-size: 13px; border-bottom: 1px solid #f3f4f6; cursor: pointer; }
+    .search-result-item:hover { background: #f9fafb; }
+    .btn-row { display: flex; gap: 8px; margin-top: 12px; }
+    .btn { flex: 1; padding: 11px; border-radius: 8px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .btn-save { background: #2563eb; color: #fff; }
+    .btn-approve { background: #16a34a; color: #fff; }
+    .btn-reject { background: #dc2626; color: #fff; }
+    .btn:disabled { background: #9ca3af; cursor: not-allowed; }
+    .status-msg { margin-top: 10px; padding: 10px; border-radius: 8px; font-size: 13px; }
+    .status-msg.success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+    .status-msg.error { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
+    .empty-state { text-align: center; color: #9ca3af; padding: 30px 0; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <h1>Approval Peminjaman Alat</h1>
+  <p class="sub">Review, edit alat kalau perlu, lalu setujui atau tolak</p>
+
+  <div id="config-warning" class="config-warning hidden">
+    ⚠️ <b>API_URL / API_TOKEN belum diisi.</b> Buka file ini, isi <code>const API_URL</code> dan <code>const API_TOKEN</code> di awal &lt;script&gt;.
+  </div>
+
+  <div class="card">
+    <label>Saya login sebagai</label>
+    <select id="role-select" onchange="muatDaftarPermintaan()">
+      <option value="">-- Pilih role --</option>
+      <option value="spv">SPV Video Production</option>
+      <option value="dept_head_production">Dept Head Production</option>
+      <option value="dept_head_ops">Dept Head Ops</option>
+    </select>
+  </div>
+
+  <div id="daftar-permintaan"></div>
+
+<script>
+  // ====================================================================
+  // KONFIGURASI — WAJIB DIISI sebelum file ini di-upload ke hosting.
+  // ====================================================================
+  const API_URL = 'https://script.google.com/macros/s/AKfycbxoKpFQGcswc_6iXoag8EeDJAdob6uUQcpZND8RJgVbqvuxa2BlQAhmPuk2myp31rxNTw/exec';
+  const API_TOKEN = 'Inventory_Alat_Murup123!';
+  // ====================================================================
+
+  if (API_URL.indexOf('PASTE_URL') !== -1 || API_TOKEN.indexOf('GANTI-DENGAN') !== -1) {
+    document.getElementById('config-warning').classList.remove('hidden');
+  }
+
+  function callApi(action, payload) {
+    return fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ token: API_TOKEN, action: action, payload: payload || {} })
+    }).then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); });
+  }
+
+  let daftarAlatSemua = [];
+  callApi('getDaftarAlatTersedia', {}).then(r => { daftarAlatSemua = r.daftar || []; }).catch(() => {});
+
+  // Simpan state daftar alat yang sedang diedit per idPermintaan (supaya tidak hilang saat re-render)
+  let editState = {};
+
+  function muatDaftarPermintaan() {
+    const role = document.getElementById('role-select').value;
+    const div = document.getElementById('daftar-permintaan');
+    if (!role) { div.innerHTML = ''; return; }
+    div.innerHTML = '<div class="empty-state">Memuat...</div>';
+    editState = {};
+    callApi('getPermintaanForRole', { role: role }).then(res => {
+      if (!res.success) { div.innerHTML = '<div class="status-msg error">' + res.message + '</div>'; return; }
+      if (res.daftar.length === 0) { div.innerHTML = '<div class="empty-state">Tidak ada permintaan yang menunggu approval kamu saat ini.</div>'; return; }
+      div.innerHTML = res.daftar.map(p => renderPermintaanCard(p, role)).join('');
+      res.daftar.forEach(p => { editState[p.idPermintaan] = p.daftarAlat.slice(); });
+    }).catch(err => {
+      div.innerHTML = '<div class="status-msg error">Gagal menghubungi server: ' + err.message + '</div>';
+    });
+  }
+
+  function renderPermintaanCard(p, role) {
+    const safeId = p.idPermintaan.replace(/[^a-zA-Z0-9]/g, '_');
+    return '<div class="permintaan-card" id="card-' + safeId + '" data-id="' + p.idPermintaan + '" data-role="' + role + '">' +
+      '<div class="permintaan-header">' + p.idPermintaan + '</div>' +
+      '<div class="permintaan-meta">' + p.nama + ' &middot; ' + p.departemen + ' &middot; Project: ' + (p.project || '-') + '<br>Rencana kembali: ' + p.rencanaKembali + '</div>' +
+      '<label>Daftar Alat (bisa diedit)</label>' +
+      '<input type="text" placeholder="Cari alat untuk ditambahkan..." oninput="cariAlatUntukEdit(this, \'' + p.idPermintaan + '\')">' +
+      '<div class="search-result hidden" id="cari-' + safeId + '"></div>' +
+      '<ul class="item-list" id="daftar-' + safeId + '"></ul>' +
+      '<label>Catatan (opsional)</label>' +
+      '<textarea id="catatan-' + safeId + '" placeholder="Catatan untuk requester..."></textarea>' +
+      '<div class="btn-row">' +
+        '<button class="btn btn-save" onclick="simpanEdit(\'' + p.idPermintaan + '\')">Simpan Perubahan Alat</button>' +
+      '</div>' +
+      '<div class="btn-row">' +
+        '<button class="btn btn-approve" onclick="setujuiPermintaan(\'' + p.idPermintaan + '\', \'' + role + '\')">✅ Setujui</button>' +
+        '<button class="btn btn-reject" onclick="tolakPermintaan(\'' + p.idPermintaan + '\', \'' + role + '\')">❌ Tolak</button>' +
+      '</div>' +
+      '<div id="hasil-' + safeId + '"></div>' +
+    '</div>';
+  }
+
+  // Render ulang daftar alat di dalam 1 card (dipanggil setelah render awal & tiap kali edit)
+  function renderDaftarAlatDiCard(idPermintaan) {
+    const safeId = idPermintaan.replace(/[^a-zA-Z0-9]/g, '_');
+    const ul = document.getElementById('daftar-' + safeId);
+    const daftar = editState[idPermintaan] || [];
+    ul.innerHTML = daftar.map((a, idx) =>
+      '<li>' + a.namaAlat + ' (' + a.idAlat + ')<button onclick="hapusAlatDiCard(\'' + idPermintaan + '\', ' + idx + ')">✕</button></li>'
+    ).join('');
+  }
+
+  function hapusAlatDiCard(idPermintaan, idx) {
+    editState[idPermintaan].splice(idx, 1);
+    renderDaftarAlatDiCard(idPermintaan);
+  }
+
+  function cariAlatUntukEdit(inputEl, idPermintaan) {
+    const q = inputEl.value.trim().toLowerCase();
+    const safeId = idPermintaan.replace(/[^a-zA-Z0-9]/g, '_');
+    const div = document.getElementById('cari-' + safeId);
+    if (!q) { div.classList.add('hidden'); div.innerHTML = ''; return; }
+    const sudahDipilih = editState[idPermintaan] || [];
+    const hasil = daftarAlatSemua.filter(a =>
+      (a.namaAlat.toLowerCase().includes(q) || String(a.idAlat).toLowerCase().includes(q)) &&
+      !sudahDipilih.some(x => x.idAlat === a.idAlat)
+    ).slice(0, 10);
+    if (hasil.length === 0) { div.innerHTML = '<div class="search-result-item">Tidak ada hasil.</div>'; div.classList.remove('hidden'); return; }
+    div.innerHTML = hasil.map(a =>
+      '<div class="search-result-item" onclick="tambahAlatDiCard(\'' + idPermintaan + '\',\'' + a.idAlat + '\',\'' + a.namaAlat.replace(/'/g, "\\'") + '\')">' +
+      a.namaAlat + ' (' + a.idAlat + ')</div>'
+    ).join('');
+    div.classList.remove('hidden');
+  }
+
+  function tambahAlatDiCard(idPermintaan, idAlat, namaAlat) {
+    editState[idPermintaan].push({ idAlat: idAlat, namaAlat: namaAlat });
+    renderDaftarAlatDiCard(idPermintaan);
+    const safeId = idPermintaan.replace(/[^a-zA-Z0-9]/g, '_');
+    document.getElementById('cari-' + safeId).classList.add('hidden');
+    const inputs = document.querySelectorAll('#card-' + safeId + ' input[type=text]');
+    if (inputs[0]) inputs[0].value = '';
+  }
+
+  // Panggil sekali render awal setelah data masuk (dipanggil manual dari muatDaftarPermintaan lewat setTimeout kecil)
+  const observer = new MutationObserver(() => {
+    Object.keys(editState).forEach(id => renderDaftarAlatDiCard(id));
+  });
+  observer.observe(document.getElementById('daftar-permintaan'), { childList: true });
+
+  function tampilkanHasil(idPermintaan, html) {
+    const safeId = idPermintaan.replace(/[^a-zA-Z0-9]/g, '_');
+    document.getElementById('hasil-' + safeId).innerHTML = html;
+  }
+
+  function simpanEdit(idPermintaan) {
+    const safeId = idPermintaan.replace(/[^a-zA-Z0-9]/g, '_');
+    const role = document.getElementById('card-' + safeId).dataset.role;
+    const catatan = document.getElementById('catatan-' + safeId).value;
+    tampilkanHasil(idPermintaan, '<div class="status-msg">Menyimpan...</div>');
+    callApi('editPermintaanItems', {
+      idPermintaan: idPermintaan, role: role,
+      daftarAlatBaru: editState[idPermintaan], catatan: catatan
+    }).then(res => {
+      if (res.success) tampilkanHasil(idPermintaan, '<div class="status-msg success">✅ Perubahan alat tersimpan & requester sudah diberi tahu.</div>');
+      else tampilkanHasil(idPermintaan, '<div class="status-msg error">' + res.message + '</div>');
+    }).catch(err => tampilkanHasil(idPermintaan, '<div class="status-msg error">Gagal menghubungi server: ' + err.message + '</div>'));
+  }
+
+  function setujuiPermintaan(idPermintaan, role) {
+    const safeId = idPermintaan.replace(/[^a-zA-Z0-9]/g, '_');
+    const catatan = document.getElementById('catatan-' + safeId).value;
+    tampilkanHasil(idPermintaan, '<div class="status-msg">Memproses...</div>');
+    callApi('approvePermintaan', { idPermintaan: idPermintaan, role: role, catatan: catatan }).then(res => {
+      if (res.success) {
+        tampilkanHasil(idPermintaan, '<div class="status-msg success">✅ Disetujui, lanjut ke tahap berikutnya.</div>');
+        setTimeout(muatDaftarPermintaan, 1200);
+      } else {
+        tampilkanHasil(idPermintaan, '<div class="status-msg error">' + res.message + '</div>');
+      }
+    }).catch(err => tampilkanHasil(idPermintaan, '<div class="status-msg error">Gagal menghubungi server: ' + err.message + '</div>'));
+  }
+
+  function tolakPermintaan(idPermintaan, role) {
+    const safeId = idPermintaan.replace(/[^a-zA-Z0-9]/g, '_');
+    const catatan = document.getElementById('catatan-' + safeId).value;
+    if (!confirm('Yakin tolak permintaan ' + idPermintaan + '? Requester akan diminta merevisi & ajukan ulang.')) return;
+    tampilkanHasil(idPermintaan, '<div class="status-msg">Memproses...</div>');
+    callApi('rejectPermintaan', { idPermintaan: idPermintaan, role: role, catatan: catatan }).then(res => {
+      if (res.success) {
+        tampilkanHasil(idPermintaan, '<div class="status-msg success">Ditolak, requester sudah diberi tahu.</div>');
+        setTimeout(muatDaftarPermintaan, 1200);
+      } else {
+        tampilkanHasil(idPermintaan, '<div class="status-msg error">' + res.message + '</div>');
+      }
+    }).catch(err => tampilkanHasil(idPermintaan, '<div class="status-msg error">Gagal menghubungi server: ' + err.message + '</div>'));
+  }
+</script>
+</body>
+</html>
