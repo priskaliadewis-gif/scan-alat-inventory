@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Ajukan Peminjaman Alat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, Roboto, Arial, sans-serif;
+      max-width: 480px; margin: 0 auto; padding: 20px 16px 60px;
+      background: #f5f6f8; color: #1f2430;
+    }
+    h1 { font-size: 20px; margin-bottom: 4px; }
+    p.sub { color: #6b7280; margin-top: 0; font-size: 14px; }
+    .card { background: #fff; border-radius: 12px; padding: 18px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; color: #374151; }
+    input, select { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 15px; }
+    .submit-btn { width: 100%; padding: 14px; margin-top: 16px; background: #111827; color: #fff; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; }
+    .submit-btn:disabled { background: #9ca3af; cursor: not-allowed; }
+    .secondary-btn { width: 100%; padding: 12px; margin-top: 8px; background: #fff; color: #374151; border: 1px solid #d1d5db; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .status-msg { margin-top: 16px; padding: 14px; border-radius: 8px; font-size: 14px; }
+    .status-msg.success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+    .status-msg.error { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
+    .config-warning { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; padding: 12px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; }
+    .hidden { display: none; }
+    .divider { text-align: center; color: #9ca3af; font-size: 12px; margin: 20px 0 12px; position: relative; }
+    .divider::before, .divider::after { content: ''; position: absolute; top: 50%; width: 40%; height: 1px; background: #e5e7eb; }
+    .divider::before { left: 0; } .divider::after { right: 0; }
+    ul.item-list { list-style: none; padding: 0; margin: 10px 0; }
+    ul.item-list li { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 6px; font-size: 14px; }
+    ul.item-list li button { background: none; border: none; color: #b91c1c; font-weight: 700; cursor: pointer; font-size: 16px; padding: 0 4px; }
+    .count-badge { display: inline-block; background: #7c3aed; color: #fff; border-radius: 999px; padding: 2px 10px; font-size: 13px; font-weight: 600; }
+    .search-result { max-height: 220px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 8px; margin-top: 6px; }
+    .search-result-item { padding: 10px 12px; font-size: 14px; border-bottom: 1px solid #f3f4f6; cursor: pointer; display: flex; justify-content: space-between; }
+    .search-result-item:hover { background: #f9fafb; }
+    .search-result-item:last-child { border-bottom: none; }
+    .search-result-item .status-tag { font-size: 11px; color: #9ca3af; }
+    .tab-switch { display: flex; gap: 8px; margin-bottom: 16px; }
+    .tab-switch button { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #d1d5db; background: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .tab-switch button.active { background: #111827; color: #fff; border-color: #111827; }
+  </style>
+</head>
+<body>
+  <h1>Ajukan Peminjaman Alat</h1>
+  <p class="sub">Pilih alat yang mau dipinjam, lalu ajukan untuk approval</p>
+
+  <div id="config-warning" class="config-warning hidden">
+    ⚠️ <b>API_URL / API_TOKEN belum diisi.</b> Buka file ini, isi <code>const API_URL</code> dan <code>const API_TOKEN</code> di awal &lt;script&gt;.
+  </div>
+
+  <div class="tab-switch">
+    <button id="tab-baru" class="active" onclick="pilihTab('baru')">Ajukan Baru</button>
+    <button id="tab-revisi" onclick="pilihTab('revisi')">Revisi yang Ditolak</button>
+  </div>
+
+  <!-- TAB: AJUKAN BARU -->
+  <div id="panel-baru">
+    <div class="card">
+      <label>Nama Peminjam</label>
+      <input id="nama" type="text" placeholder="Nama lengkap">
+      <label>Email</label>
+      <input id="email" type="email" placeholder="nama@email.com">
+      <label>Departemen</label>
+      <input id="departemen" type="text" placeholder="Misal: Produksi, Kamera">
+      <label>Nama / Kode Project</label>
+      <input id="project" type="text" placeholder="Misal: Dokumenter Laut Selatan">
+      <label>Rencana Tanggal Kembali</label>
+      <input id="tanggalKembali" type="date">
+
+      <label>Cari & Pilih Alat</label>
+      <input id="cari-alat" type="text" placeholder="Ketik nama atau ID alat...">
+      <div id="hasil-cari" class="search-result hidden"></div>
+
+      <div class="divider">Alat dipilih <span class="count-badge" id="jumlah-alat">0</span></div>
+      <ul class="item-list" id="daftar-alat-dipilih"></ul>
+
+      <button id="btn-submit" class="submit-btn" disabled onclick="submitAjuan()">Ajukan Peminjaman</button>
+      <div id="hasil-submit"></div>
+    </div>
+  </div>
+
+  <!-- TAB: REVISI -->
+  <div id="panel-revisi" class="hidden">
+    <div class="card">
+      <label>ID Permintaan yang Ditolak</label>
+      <input id="r-idPermintaan" type="text" placeholder="Misal: REQ-240910-153000-42">
+      <button class="secondary-btn" onclick="muatPermintaanUntukRevisi()">Muat Data Permintaan</button>
+      <div id="info-revisi"></div>
+    </div>
+
+    <div id="form-revisi-detail" class="card hidden">
+      <label>Rencana Tanggal Kembali</label>
+      <input id="r-tanggalKembali" type="date">
+
+      <label>Cari & Pilih Alat</label>
+      <input id="r-cari-alat" type="text" placeholder="Ketik nama atau ID alat...">
+      <div id="r-hasil-cari" class="search-result hidden"></div>
+
+      <div class="divider">Alat dipilih <span class="count-badge" id="r-jumlah-alat">0</span></div>
+      <ul class="item-list" id="r-daftar-alat-dipilih"></ul>
+
+      <button id="btn-submit-revisi" class="submit-btn" disabled onclick="submitRevisi()">Ajukan Ulang</button>
+      <div id="hasil-submit-revisi"></div>
+    </div>
+  </div>
+
+<script>
+  // ====================================================================
+  // KONFIGURASI — WAJIB DIISI sebelum file ini di-upload ke hosting.
+  // ====================================================================
+  const API_URL = 'https://script.google.com/macros/s/AKfycbxoKpFQGcswc_6iXoag8EeDJAdob6uUQcpZND8RJgVbqvuxa2BlQAhmPuk2myp31rxNTw/exec';
+  const API_TOKEN = 'Inventory_Alat_Murup123!';
+  // ====================================================================
+
+  if (API_URL.indexOf('PASTE_URL') !== -1 || API_TOKEN.indexOf('GANTI-DENGAN') !== -1) {
+    document.getElementById('config-warning').classList.remove('hidden');
+  }
+
+  function callApi(action, payload) {
+    return fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ token: API_TOKEN, action: action, payload: payload || {} })
+    }).then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); });
+  }
+
+  let daftarAlatSemua = [];
+  callApi('getDaftarAlatTersedia', {}).then(r => { daftarAlatSemua = r.daftar || []; }).catch(() => {});
+
+  function pilihTab(tab) {
+    document.getElementById('tab-baru').classList.toggle('active', tab === 'baru');
+    document.getElementById('tab-revisi').classList.toggle('active', tab === 'revisi');
+    document.getElementById('panel-baru').classList.toggle('hidden', tab !== 'baru');
+    document.getElementById('panel-revisi').classList.toggle('hidden', tab !== 'revisi');
+  }
+
+  // ---------- AJUKAN BARU ----------
+  let alatDipilih = [];
+
+  document.getElementById('cari-alat').addEventListener('input', function() {
+    const q = this.value.trim().toLowerCase();
+    const div = document.getElementById('hasil-cari');
+    if (!q) { div.classList.add('hidden'); div.innerHTML = ''; return; }
+    const hasil = daftarAlatSemua.filter(a =>
+      (a.namaAlat.toLowerCase().includes(q) || String(a.idAlat).toLowerCase().includes(q)) &&
+      !alatDipilih.some(x => x.idAlat === a.idAlat)
+    ).slice(0, 15);
+    if (hasil.length === 0) { div.innerHTML = '<div class="search-result-item">Tidak ada hasil.</div>'; div.classList.remove('hidden'); return; }
+    div.innerHTML = hasil.map(a =>
+      '<div class="search-result-item" onclick="pilihAlat(\'' + a.idAlat + '\',\'' + a.namaAlat.replace(/'/g, "\\'") + '\')">' +
+      '<span>' + a.namaAlat + ' (' + a.idAlat + ')</span><span class="status-tag">' + a.status + '</span></div>'
+    ).join('');
+    div.classList.remove('hidden');
+  });
+
+  function pilihAlat(idAlat, namaAlat) {
+    alatDipilih.push({ idAlat: idAlat, namaAlat: namaAlat });
+    document.getElementById('cari-alat').value = '';
+    document.getElementById('hasil-cari').classList.add('hidden');
+    renderAlatDipilih();
+  }
+
+  function renderAlatDipilih() {
+    const ul = document.getElementById('daftar-alat-dipilih');
+    ul.innerHTML = alatDipilih.map((a, idx) =>
+      '<li>' + a.namaAlat + ' (' + a.idAlat + ')<button onclick="hapusAlatDipilih(' + idx + ')">✕</button></li>'
+    ).join('');
+    document.getElementById('jumlah-alat').innerText = alatDipilih.length;
+    cekFormValid();
+  }
+
+  function hapusAlatDipilih(idx) { alatDipilih.splice(idx, 1); renderAlatDipilih(); }
+
+  function cekFormValid() {
+    const nama = document.getElementById('nama').value;
+    const email = document.getElementById('email').value;
+    const tanggal = document.getElementById('tanggalKembali').value;
+    document.getElementById('btn-submit').disabled = !(nama && email && tanggal && alatDipilih.length > 0);
+  }
+  ['nama', 'email', 'tanggalKembali'].forEach(id => document.getElementById(id).addEventListener('input', cekFormValid));
+
+  function submitAjuan() {
+    const btn = document.getElementById('btn-submit');
+    btn.disabled = true; btn.innerText = 'Memproses...';
+    callApi('submitPermintaan', {
+      nama: document.getElementById('nama').value,
+      email: document.getElementById('email').value,
+      departemen: document.getElementById('departemen').value,
+      project: document.getElementById('project').value,
+      rencanaKembali: document.getElementById('tanggalKembali').value,
+      daftarAlat: alatDipilih
+    }).then(result => {
+      btn.innerText = 'Ajukan Peminjaman';
+      if (result.success) {
+        document.getElementById('hasil-submit').innerHTML =
+          '<div class="status-msg success">✅ Permintaan diajukan! ID Permintaan: <b>' + result.idPermintaan + '</b><br>Simpan ID ini untuk cek status atau revisi nanti.</div>';
+      } else {
+        btn.disabled = false;
+        document.getElementById('hasil-submit').innerHTML = '<div class="status-msg error">' + result.message + '</div>';
+      }
+    }).catch(err => {
+      btn.disabled = false; btn.innerText = 'Ajukan Peminjaman';
+      document.getElementById('hasil-submit').innerHTML = '<div class="status-msg error">Gagal menghubungi server: ' + err.message + '</div>';
+    });
+  }
+
+  // ---------- REVISI YANG DITOLAK ----------
+  let alatDipilihRevisi = [];
+  let idPermintaanRevisi = null;
+
+  function muatPermintaanUntukRevisi() {
+    const id = document.getElementById('r-idPermintaan').value.trim();
+    if (!id) return;
+    document.getElementById('info-revisi').innerHTML = '<div class="status-msg">Mencari...</div>';
+    callApi('getPermintaanById', { idPermintaan: id }).then(res => {
+      if (!res.found) {
+        document.getElementById('info-revisi').innerHTML = '<div class="status-msg error">ID Permintaan tidak ditemukan.</div>';
+        document.getElementById('form-revisi-detail').classList.add('hidden');
+        return;
+      }
+      if (res.data.status !== 'Ditolak - Perlu Revisi') {
+        document.getElementById('info-revisi').innerHTML =
+          '<div class="status-msg error">Permintaan ini berstatus "' + res.data.status + '", cuma permintaan yang DITOLAK yang bisa direvisi di sini.</div>';
+        document.getElementById('form-revisi-detail').classList.add('hidden');
+        return;
+      }
+      idPermintaanRevisi = id;
+      alatDipilihRevisi = res.data.daftarAlat.slice();
+      document.getElementById('r-tanggalKembali').value = res.data.rencanaKembali ? String(res.data.rencanaKembali).slice(0, 10) : '';
+      document.getElementById('info-revisi').innerHTML = '<div class="status-msg success">✅ Data dimuat. Silakan sesuaikan daftar alat & tanggal, lalu ajukan ulang.</div>';
+      document.getElementById('form-revisi-detail').classList.remove('hidden');
+      renderAlatDipilihRevisi();
+    }).catch(err => {
+      document.getElementById('info-revisi').innerHTML = '<div class="status-msg error">Gagal menghubungi server: ' + err.message + '</div>';
+    });
+  }
+
+  document.getElementById('r-cari-alat').addEventListener('input', function() {
+    const q = this.value.trim().toLowerCase();
+    const div = document.getElementById('r-hasil-cari');
+    if (!q) { div.classList.add('hidden'); div.innerHTML = ''; return; }
+    const hasil = daftarAlatSemua.filter(a =>
+      (a.namaAlat.toLowerCase().includes(q) || String(a.idAlat).toLowerCase().includes(q)) &&
+      !alatDipilihRevisi.some(x => x.idAlat === a.idAlat)
+    ).slice(0, 15);
+    if (hasil.length === 0) { div.innerHTML = '<div class="search-result-item">Tidak ada hasil.</div>'; div.classList.remove('hidden'); return; }
+    div.innerHTML = hasil.map(a =>
+      '<div class="search-result-item" onclick="pilihAlatRevisi(\'' + a.idAlat + '\',\'' + a.namaAlat.replace(/'/g, "\\'") + '\')">' +
+      '<span>' + a.namaAlat + ' (' + a.idAlat + ')</span><span class="status-tag">' + a.status + '</span></div>'
+    ).join('');
+    div.classList.remove('hidden');
+  });
+
+  function pilihAlatRevisi(idAlat, namaAlat) {
+    alatDipilihRevisi.push({ idAlat: idAlat, namaAlat: namaAlat });
+    document.getElementById('r-cari-alat').value = '';
+    document.getElementById('r-hasil-cari').classList.add('hidden');
+    renderAlatDipilihRevisi();
+  }
+
+  function renderAlatDipilihRevisi() {
+    const ul = document.getElementById('r-daftar-alat-dipilih');
+    ul.innerHTML = alatDipilihRevisi.map((a, idx) =>
+      '<li>' + a.namaAlat + ' (' + a.idAlat + ')<button onclick="hapusAlatDipilihRevisi(' + idx + ')">✕</button></li>'
+    ).join('');
+    document.getElementById('r-jumlah-alat').innerText = alatDipilihRevisi.length;
+    document.getElementById('btn-submit-revisi').disabled = !(alatDipilihRevisi.length > 0 && document.getElementById('r-tanggalKembali').value);
+  }
+  function hapusAlatDipilihRevisi(idx) { alatDipilihRevisi.splice(idx, 1); renderAlatDipilihRevisi(); }
+  document.getElementById('r-tanggalKembali').addEventListener('input', renderAlatDipilihRevisi);
+
+  function submitRevisi() {
+    const btn = document.getElementById('btn-submit-revisi');
+    btn.disabled = true; btn.innerText = 'Memproses...';
+    callApi('resubmitPermintaan', {
+      idPermintaan: idPermintaanRevisi,
+      daftarAlatBaru: alatDipilihRevisi,
+      rencanaKembali: document.getElementById('r-tanggalKembali').value
+    }).then(result => {
+      btn.innerText = 'Ajukan Ulang';
+      if (result.success) {
+        document.getElementById('hasil-submit-revisi').innerHTML =
+          '<div class="status-msg success">✅ Berhasil diajukan ulang! Akan direview ulang mulai dari SPV Video Production.</div>';
+      } else {
+        btn.disabled = false;
+        document.getElementById('hasil-submit-revisi').innerHTML = '<div class="status-msg error">' + result.message + '</div>';
+      }
+    }).catch(err => {
+      btn.disabled = false; btn.innerText = 'Ajukan Ulang';
+      document.getElementById('hasil-submit-revisi').innerHTML = '<div class="status-msg error">Gagal menghubungi server: ' + err.message + '</div>';
+    });
+  }
+</script>
+</body>
+</html>
