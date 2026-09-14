@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Approval Peminjaman Alat</title>
+  <title>Approval Peminjaman & Pengembalian Alat</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     * { box-sizing: border-box; }
@@ -18,6 +18,9 @@
     .permintaan-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; margin-bottom: 14px; }
     .permintaan-header { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
     .permintaan-meta { font-size: 13px; color: #6b7280; margin-bottom: 10px; }
+    .jenis-tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; margin-bottom: 6px; }
+    .jenis-tag.peminjaman { background: #dbeafe; color: #1d4ed8; }
+    .jenis-tag.pengembalian { background: #fef3c7; color: #92400e; }
     .role-note { font-size: 12px; color: #9ca3af; margin: 8px 0; font-style: italic; }
     ul.item-list { list-style: none; padding: 0; margin: 8px 0; }
     ul.item-list li { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 4px; font-size: 13px; }
@@ -38,14 +41,19 @@
   </style>
 </head>
 <body>
-  <h1>Approval Peminjaman Alat</h1>
-  <p class="sub">Review, edit alat kalau perlu, lalu setujui atau tolak</p>
+  <h1>Approval Alat</h1>
+  <p class="sub">Review, edit alat kalau perlu (khusus peminjaman), lalu setujui atau tolak</p>
 
   <div id="config-warning" class="config-warning hidden">
     ⚠️ <b>API_URL / API_TOKEN belum diisi.</b> Buka file ini, isi <code>const API_URL</code> dan <code>const API_TOKEN</code> di awal &lt;script&gt;.
   </div>
 
   <div class="card">
+    <label>Jenis Pengajuan</label>
+    <select id="jenis-select" onchange="muatDaftarPermintaan()">
+      <option value="peminjaman">Peminjaman</option>
+      <option value="pengembalian">Pengembalian</option>
+    </select>
     <label>Saya login sebagai</label>
     <select id="role-select" onchange="muatDaftarPermintaan()">
       <option value="">-- Pilih role --</option>
@@ -77,108 +85,123 @@
     }).then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); });
   }
 
-  // Role yang boleh mengedit daftar alat. Dept Head Ops sengaja TIDAK termasuk —
-  // tugasnya cuma approve/reject tahap akhir untuk mengeluarkan alat.
+  // Role yang boleh mengedit daftar alat — HANYA berlaku untuk jenis Peminjaman.
+  // Pengembalian tidak pernah bisa diedit oleh siapapun di tahap approval.
   const ROLE_BOLEH_EDIT = ['spv', 'dept_head_production'];
 
   let daftarAlatSemua = [];
   callApi('getDaftarAlatTersedia', {}).then(r => { daftarAlatSemua = r.daftar || []; }).catch(() => {});
 
-  // Simpan state daftar alat yang sedang diedit per idPermintaan (supaya tidak hilang saat re-render)
+  // Simpan state daftar alat yang sedang diedit per id pengajuan (supaya tidak hilang saat re-render)
   let editState = {};
 
   function muatDaftarPermintaan() {
+    const jenis = document.getElementById('jenis-select').value;
     const role = document.getElementById('role-select').value;
     const div = document.getElementById('daftar-permintaan');
     if (!role) { div.innerHTML = ''; return; }
     div.innerHTML = '<div class="empty-state">Memuat...</div>';
     editState = {};
-    callApi('getPermintaanForRole', { role: role }).then(res => {
+
+    const action = jenis === 'pengembalian' ? 'getPengembalianForRole' : 'getPermintaanForRole';
+    callApi(action, { role: role }).then(res => {
       if (!res.success) { div.innerHTML = '<div class="status-msg error">' + res.message + '</div>'; return; }
-      if (res.daftar.length === 0) { div.innerHTML = '<div class="empty-state">Tidak ada permintaan yang menunggu approval kamu saat ini.</div>'; return; }
-      div.innerHTML = res.daftar.map(p => renderPermintaanCard(p, role)).join('');
+      if (res.daftar.length === 0) { div.innerHTML = '<div class="empty-state">Tidak ada pengajuan yang menunggu approval kamu saat ini.</div>'; return; }
+      div.innerHTML = res.daftar.map(p => renderPermintaanCard(p, role, jenis)).join('');
+      const bisaEdit = jenis === 'peminjaman' && ROLE_BOLEH_EDIT.includes(role);
       res.daftar.forEach(p => {
-        if (ROLE_BOLEH_EDIT.includes(role)) {
-          editState[p.idPermintaan] = p.daftarAlat.slice();
-        }
+        const idKey = jenis === 'pengembalian' ? p.idPengembalian : p.idPermintaan;
+        if (bisaEdit) editState[idKey] = p.daftarAlat.slice();
       });
     }).catch(err => {
       div.innerHTML = '<div class="status-msg error">Gagal menghubungi server: ' + err.message + '</div>';
     });
   }
 
-  function renderPermintaanCard(p, role) {
-    const safeId = p.idPermintaan.replace(/[^a-zA-Z0-9]/g, '_');
-    const bisaEdit = ROLE_BOLEH_EDIT.includes(role);
+  function renderPermintaanCard(p, role, jenis) {
+    const idKey = jenis === 'pengembalian' ? p.idPengembalian : p.idPermintaan;
+    const safeId = idKey.replace(/[^a-zA-Z0-9]/g, '_');
+    const bisaEdit = jenis === 'peminjaman' && ROLE_BOLEH_EDIT.includes(role);
 
-    const bagianAlat = bisaEdit
-      ? ( // Role boleh edit: tampilkan pencarian + daftar yang bisa ditambah/hapus + tombol simpan
-          '<label>Daftar Alat (bisa diedit)</label>' +
-          '<input type="text" placeholder="Cari alat untuk ditambahkan..." oninput="cariAlatUntukEdit(this, \'' + p.idPermintaan + '\')">' +
-          '<div class="search-result hidden" id="cari-' + safeId + '"></div>' +
-          '<ul class="item-list" id="daftar-' + safeId + '"></ul>' +
-          '<div class="btn-row">' +
-            '<button class="btn btn-save" onclick="simpanEdit(\'' + p.idPermintaan + '\')">Simpan Perubahan Alat</button>' +
-          '</div>'
-        )
-      : ( // Dept Head Ops: cuma lihat daftar alat, tidak bisa diedit
-          '<label>Daftar Alat</label>' +
-          '<div class="role-note">Tahap ini hanya untuk approve/reject — daftar alat sudah dikunci sejak tahap Dept Head Production.</div>' +
-          '<ul class="item-list">' + p.daftarAlat.map(a => '<li>' + a.namaAlat + ' (' + a.idAlat + ')</li>').join('') + '</ul>'
-        );
+    let bagianAlat;
+    if (bisaEdit) {
+      bagianAlat =
+        '<label>Daftar Alat (bisa diedit)</label>' +
+        '<input type="text" placeholder="Cari alat untuk ditambahkan..." oninput="cariAlatUntukEdit(this, \'' + idKey + '\')">' +
+        '<div class="search-result hidden" id="cari-' + safeId + '"></div>' +
+        '<ul class="item-list" id="daftar-' + safeId + '"></ul>' +
+        '<div class="btn-row">' +
+          '<button class="btn btn-save" onclick="simpanEdit(\'' + idKey + '\')">Simpan Perubahan Alat</button>' +
+        '</div>';
+    } else if (jenis === 'pengembalian') {
+      bagianAlat =
+        '<label>Daftar Alat yang Dikembalikan</label>' +
+        '<div class="role-note">Tahap ini hanya untuk approve/reject — daftar alat pengembalian tidak bisa diedit.</div>' +
+        '<ul class="item-list">' + p.daftarAlat.map(a => '<li>' + a.namaAlat + ' (' + a.idAlat + ')</li>').join('') + '</ul>';
+    } else {
+      bagianAlat =
+        '<label>Daftar Alat</label>' +
+        '<div class="role-note">Tahap ini hanya untuk approve/reject — daftar alat sudah dikunci sejak tahap Dept Head Production.</div>' +
+        '<ul class="item-list">' + p.daftarAlat.map(a => '<li>' + a.namaAlat + ' (' + a.idAlat + ')</li>').join('') + '</ul>';
+    }
 
-    return '<div class="permintaan-card" id="card-' + safeId + '" data-id="' + p.idPermintaan + '" data-role="' + role + '">' +
-      '<div class="permintaan-header">' + p.idPermintaan + '</div>' +
-      '<div class="permintaan-meta">' + p.nama + ' &middot; ' + p.departemen + ' &middot; Project: ' + (p.project || '-') + '<br>Rencana kembali: ' + p.rencanaKembali + '</div>' +
+    const metaLine = jenis === 'pengembalian'
+      ? (p.nama + ' &middot; ' + p.departemen)
+      : (p.nama + ' &middot; ' + p.departemen + ' &middot; Project: ' + (p.project || '-') + '<br>Rencana kembali: ' + p.rencanaKembali);
+
+    return '<div class="permintaan-card" id="card-' + safeId + '" data-id="' + idKey + '" data-role="' + role + '" data-jenis="' + jenis + '">' +
+      '<span class="jenis-tag ' + jenis + '">' + (jenis === 'pengembalian' ? 'PENGEMBALIAN' : 'PEMINJAMAN') + '</span>' +
+      '<div class="permintaan-header">' + idKey + '</div>' +
+      '<div class="permintaan-meta">' + metaLine + '</div>' +
       bagianAlat +
       '<label>Catatan (opsional)</label>' +
       '<textarea id="catatan-' + safeId + '" placeholder="Catatan untuk requester..."></textarea>' +
       '<div class="btn-row">' +
-        '<button class="btn btn-approve" onclick="setujuiPermintaan(\'' + p.idPermintaan + '\', \'' + role + '\')">✅ Setujui</button>' +
-        '<button class="btn btn-reject" onclick="tolakPermintaan(\'' + p.idPermintaan + '\', \'' + role + '\')">❌ Tolak</button>' +
+        '<button class="btn btn-approve" onclick="setujuiPermintaan(\'' + idKey + '\', \'' + role + '\', \'' + jenis + '\')">✅ Setujui</button>' +
+        '<button class="btn btn-reject" onclick="tolakPermintaan(\'' + idKey + '\', \'' + role + '\', \'' + jenis + '\')">❌ Tolak</button>' +
       '</div>' +
       '<div id="hasil-' + safeId + '"></div>' +
     '</div>';
   }
 
   // Render ulang daftar alat di dalam 1 card (dipanggil setelah render awal & tiap kali edit)
-  function renderDaftarAlatDiCard(idPermintaan) {
-    const safeId = idPermintaan.replace(/[^a-zA-Z0-9]/g, '_');
+  function renderDaftarAlatDiCard(idKey) {
+    const safeId = idKey.replace(/[^a-zA-Z0-9]/g, '_');
     const ul = document.getElementById('daftar-' + safeId);
-    if (!ul) return; // role tidak bisa edit, elemen ini memang tidak ada
-    const daftar = editState[idPermintaan] || [];
+    if (!ul) return; // role/jenis tidak bisa edit, elemen ini memang tidak ada
+    const daftar = editState[idKey] || [];
     ul.innerHTML = daftar.map((a, idx) =>
-      '<li>' + a.namaAlat + ' (' + a.idAlat + ')<button onclick="hapusAlatDiCard(\'' + idPermintaan + '\', ' + idx + ')">✕</button></li>'
+      '<li>' + a.namaAlat + ' (' + a.idAlat + ')<button onclick="hapusAlatDiCard(\'' + idKey + '\', ' + idx + ')">✕</button></li>'
     ).join('');
   }
 
-  function hapusAlatDiCard(idPermintaan, idx) {
-    editState[idPermintaan].splice(idx, 1);
-    renderDaftarAlatDiCard(idPermintaan);
+  function hapusAlatDiCard(idKey, idx) {
+    editState[idKey].splice(idx, 1);
+    renderDaftarAlatDiCard(idKey);
   }
 
-  function cariAlatUntukEdit(inputEl, idPermintaan) {
+  function cariAlatUntukEdit(inputEl, idKey) {
     const q = inputEl.value.trim().toLowerCase();
-    const safeId = idPermintaan.replace(/[^a-zA-Z0-9]/g, '_');
+    const safeId = idKey.replace(/[^a-zA-Z0-9]/g, '_');
     const div = document.getElementById('cari-' + safeId);
     if (!q) { div.classList.add('hidden'); div.innerHTML = ''; return; }
-    const sudahDipilih = editState[idPermintaan] || [];
+    const sudahDipilih = editState[idKey] || [];
     const hasil = daftarAlatSemua.filter(a =>
       (a.namaAlat.toLowerCase().includes(q) || String(a.idAlat).toLowerCase().includes(q)) &&
       !sudahDipilih.some(x => x.idAlat === a.idAlat)
     ).slice(0, 10);
     if (hasil.length === 0) { div.innerHTML = '<div class="search-result-item">Tidak ada hasil.</div>'; div.classList.remove('hidden'); return; }
     div.innerHTML = hasil.map(a =>
-      '<div class="search-result-item" onclick="tambahAlatDiCard(\'' + idPermintaan + '\',\'' + a.idAlat + '\',\'' + a.namaAlat.replace(/'/g, "\\'") + '\')">' +
+      '<div class="search-result-item" onclick="tambahAlatDiCard(\'' + idKey + '\',\'' + a.idAlat + '\',\'' + a.namaAlat.replace(/'/g, "\\'") + '\')">' +
       a.namaAlat + ' (' + a.idAlat + ')</div>'
     ).join('');
     div.classList.remove('hidden');
   }
 
-  function tambahAlatDiCard(idPermintaan, idAlat, namaAlat) {
-    editState[idPermintaan].push({ idAlat: idAlat, namaAlat: namaAlat });
-    renderDaftarAlatDiCard(idPermintaan);
-    const safeId = idPermintaan.replace(/[^a-zA-Z0-9]/g, '_');
+  function tambahAlatDiCard(idKey, idAlat, namaAlat) {
+    editState[idKey].push({ idAlat: idAlat, namaAlat: namaAlat });
+    renderDaftarAlatDiCard(idKey);
+    const safeId = idKey.replace(/[^a-zA-Z0-9]/g, '_');
     document.getElementById('cari-' + safeId).classList.add('hidden');
     const inputs = document.querySelectorAll('#card-' + safeId + ' input[type=text]');
     if (inputs[0]) inputs[0].value = '';
@@ -190,52 +213,65 @@
   });
   observer.observe(document.getElementById('daftar-permintaan'), { childList: true });
 
-  function tampilkanHasil(idPermintaan, html) {
-    const safeId = idPermintaan.replace(/[^a-zA-Z0-9]/g, '_');
+  function tampilkanHasil(idKey, html) {
+    const safeId = idKey.replace(/[^a-zA-Z0-9]/g, '_');
     document.getElementById('hasil-' + safeId).innerHTML = html;
   }
 
-  function simpanEdit(idPermintaan) {
-    const safeId = idPermintaan.replace(/[^a-zA-Z0-9]/g, '_');
+  function simpanEdit(idKey) {
+    const safeId = idKey.replace(/[^a-zA-Z0-9]/g, '_');
     const role = document.getElementById('card-' + safeId).dataset.role;
     const catatan = document.getElementById('catatan-' + safeId).value;
-    tampilkanHasil(idPermintaan, '<div class="status-msg">Menyimpan...</div>');
+    tampilkanHasil(idKey, '<div class="status-msg">Menyimpan...</div>');
+    // Simpan edit hanya berlaku untuk Peminjaman (Pengembalian tidak bisa diedit)
     callApi('editPermintaanItems', {
-      idPermintaan: idPermintaan, role: role,
-      daftarAlatBaru: editState[idPermintaan], catatan: catatan
+      idPermintaan: idKey, role: role,
+      daftarAlatBaru: editState[idKey], catatan: catatan
     }).then(res => {
-      if (res.success) tampilkanHasil(idPermintaan, '<div class="status-msg success">✅ Perubahan alat tersimpan & requester sudah diberi tahu.</div>');
-      else tampilkanHasil(idPermintaan, '<div class="status-msg error">' + res.message + '</div>');
-    }).catch(err => tampilkanHasil(idPermintaan, '<div class="status-msg error">Gagal menghubungi server: ' + err.message + '</div>'));
+      if (res.success) tampilkanHasil(idKey, '<div class="status-msg success">✅ Perubahan alat tersimpan & requester sudah diberi tahu.</div>');
+      else tampilkanHasil(idKey, '<div class="status-msg error">' + res.message + '</div>');
+    }).catch(err => tampilkanHasil(idKey, '<div class="status-msg error">Gagal menghubungi server: ' + err.message + '</div>'));
   }
 
-  function setujuiPermintaan(idPermintaan, role) {
-    const safeId = idPermintaan.replace(/[^a-zA-Z0-9]/g, '_');
+  function setujuiPermintaan(idKey, role, jenis) {
+    const safeId = idKey.replace(/[^a-zA-Z0-9]/g, '_');
     const catatan = document.getElementById('catatan-' + safeId).value;
-    tampilkanHasil(idPermintaan, '<div class="status-msg">Memproses...</div>');
-    callApi('approvePermintaan', { idPermintaan: idPermintaan, role: role, catatan: catatan }).then(res => {
+    tampilkanHasil(idKey, '<div class="status-msg">Memproses...</div>');
+
+    const action = jenis === 'pengembalian' ? 'approvePengembalian' : 'approvePermintaan';
+    const payload = jenis === 'pengembalian'
+      ? { idPengembalian: idKey, role: role, catatan: catatan }
+      : { idPermintaan: idKey, role: role, catatan: catatan };
+
+    callApi(action, payload).then(res => {
       if (res.success) {
-        tampilkanHasil(idPermintaan, '<div class="status-msg success">✅ Disetujui, lanjut ke tahap berikutnya.</div>');
+        tampilkanHasil(idKey, '<div class="status-msg success">✅ Disetujui, lanjut ke tahap berikutnya.</div>');
         setTimeout(muatDaftarPermintaan, 1200);
       } else {
-        tampilkanHasil(idPermintaan, '<div class="status-msg error">' + res.message + '</div>');
+        tampilkanHasil(idKey, '<div class="status-msg error">' + res.message + '</div>');
       }
-    }).catch(err => tampilkanHasil(idPermintaan, '<div class="status-msg error">Gagal menghubungi server: ' + err.message + '</div>'));
+    }).catch(err => tampilkanHasil(idKey, '<div class="status-msg error">Gagal menghubungi server: ' + err.message + '</div>'));
   }
 
-  function tolakPermintaan(idPermintaan, role) {
-    const safeId = idPermintaan.replace(/[^a-zA-Z0-9]/g, '_');
+  function tolakPermintaan(idKey, role, jenis) {
+    const safeId = idKey.replace(/[^a-zA-Z0-9]/g, '_');
     const catatan = document.getElementById('catatan-' + safeId).value;
-    if (!confirm('Yakin tolak permintaan ' + idPermintaan + '? Requester akan diminta merevisi & ajukan ulang.')) return;
-    tampilkanHasil(idPermintaan, '<div class="status-msg">Memproses...</div>');
-    callApi('rejectPermintaan', { idPermintaan: idPermintaan, role: role, catatan: catatan }).then(res => {
+    if (!confirm('Yakin tolak pengajuan ' + idKey + '? Requester akan diminta merevisi & ajukan ulang.')) return;
+    tampilkanHasil(idKey, '<div class="status-msg">Memproses...</div>');
+
+    const action = jenis === 'pengembalian' ? 'rejectPengembalian' : 'rejectPermintaan';
+    const payload = jenis === 'pengembalian'
+      ? { idPengembalian: idKey, role: role, catatan: catatan }
+      : { idPermintaan: idKey, role: role, catatan: catatan };
+
+    callApi(action, payload).then(res => {
       if (res.success) {
-        tampilkanHasil(idPermintaan, '<div class="status-msg success">Ditolak, requester sudah diberi tahu.</div>');
+        tampilkanHasil(idKey, '<div class="status-msg success">Ditolak, requester sudah diberi tahu.</div>');
         setTimeout(muatDaftarPermintaan, 1200);
       } else {
-        tampilkanHasil(idPermintaan, '<div class="status-msg error">' + res.message + '</div>');
+        tampilkanHasil(idKey, '<div class="status-msg error">' + res.message + '</div>');
       }
-    }).catch(err => tampilkanHasil(idPermintaan, '<div class="status-msg error">Gagal menghubungi server: ' + err.message + '</div>'));
+    }).catch(err => tampilkanHasil(idKey, '<div class="status-msg error">Gagal menghubungi server: ' + err.message + '</div>'));
   }
 </script>
 </body>
