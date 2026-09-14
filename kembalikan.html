@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Kembalikan Alat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, Roboto, Arial, sans-serif;
+      max-width: 480px; margin: 0 auto; padding: 20px 16px 60px;
+      background: #f5f6f8; color: #1f2430;
+    }
+    h1 { font-size: 20px; margin-bottom: 4px; }
+    p.sub { color: #6b7280; margin-top: 0; font-size: 14px; }
+    .card { background: #fff; border-radius: 12px; padding: 18px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; color: #374151; }
+    input, select { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 15px; }
+    .submit-btn { width: 100%; padding: 14px; margin-top: 16px; background: #111827; color: #fff; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; }
+    .submit-btn:disabled { background: #9ca3af; cursor: not-allowed; }
+    .secondary-btn { width: 100%; padding: 12px; margin-top: 8px; background: #fff; color: #374151; border: 1px solid #d1d5db; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .status-msg { margin-top: 16px; padding: 14px; border-radius: 8px; font-size: 14px; }
+    .status-msg.success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+    .status-msg.error { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
+    .config-warning { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; padding: 12px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; }
+    .hidden { display: none; }
+    .divider { text-align: center; color: #9ca3af; font-size: 12px; margin: 20px 0 12px; position: relative; }
+    .divider::before, .divider::after { content: ''; position: absolute; top: 50%; width: 40%; height: 1px; background: #e5e7eb; }
+    .divider::before { left: 0; } .divider::after { right: 0; }
+    ul.item-list { list-style: none; padding: 0; margin: 10px 0; }
+    ul.item-list li { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 6px; font-size: 14px; }
+    ul.item-list li.checkbox-item { justify-content: flex-start; gap: 10px; cursor: pointer; }
+    .count-badge { display: inline-block; background: #16a34a; color: #fff; border-radius: 999px; padding: 2px 10px; font-size: 13px; font-weight: 600; }
+    .tab-switch { display: flex; gap: 8px; margin-bottom: 16px; }
+    .tab-switch button { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #d1d5db; background: #fff; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .tab-switch button.active { background: #111827; color: #fff; border-color: #111827; }
+    .empty-state { text-align: center; color: #9ca3af; padding: 20px 0; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <h1>Kembalikan Alat</h1>
+  <p class="sub">Pilih alat yang sedang kamu pinjam untuk diajukan pengembaliannya</p>
+
+  <div id="config-warning" class="config-warning hidden">
+    ⚠️ <b>API_URL / API_TOKEN belum diisi.</b> Buka file ini, isi <code>const API_URL</code> dan <code>const API_TOKEN</code> di awal &lt;script&gt;.
+  </div>
+
+  <div class="tab-switch">
+    <button id="tab-baru" class="active" onclick="pilihTab('baru')">Ajukan Baru</button>
+    <button id="tab-revisi" onclick="pilihTab('revisi')">Revisi yang Ditolak</button>
+  </div>
+
+  <!-- TAB: AJUKAN BARU -->
+  <div id="panel-baru">
+    <div class="card">
+      <label>Nama</label>
+      <input id="nama" type="text" placeholder="Nama lengkap">
+      <label>Email</label>
+      <input id="email" type="email" placeholder="nama@email.com">
+      <label>Departemen</label>
+      <input id="departemen" type="text" placeholder="Misal: Produksi, Kamera">
+      <button class="secondary-btn" onclick="muatAlatDipinjam()">Muat Alat yang Sedang Saya Pinjam</button>
+
+      <div id="daftar-alat-wrapper" class="hidden">
+        <div class="divider">Alat dipilih untuk dikembalikan <span class="count-badge" id="jumlah-alat">0</span></div>
+        <ul class="item-list" id="daftar-alat-checklist"></ul>
+      </div>
+
+      <button id="btn-submit" class="submit-btn" disabled onclick="submitPengembalian()">Ajukan Pengembalian</button>
+      <div id="hasil-submit"></div>
+    </div>
+  </div>
+
+  <!-- TAB: REVISI -->
+  <div id="panel-revisi" class="hidden">
+    <div class="card">
+      <label>ID Pengembalian yang Ditolak</label>
+      <input id="r-idPengembalian" type="text" placeholder="Misal: RTN-240910-153000-42">
+      <button class="secondary-btn" onclick="muatPengembalianUntukRevisi()">Muat Data Pengembalian</button>
+      <div id="info-revisi"></div>
+    </div>
+
+    <div id="form-revisi-detail" class="card hidden">
+      <div class="divider">Alat yang diajukan <span class="count-badge" id="r-jumlah-alat">0</span></div>
+      <ul class="item-list" id="r-daftar-alat-checklist"></ul>
+      <p class="sub" style="margin-top:8px;">Hapus centang alat yang TIDAK jadi dikembalikan, lalu ajukan ulang.</p>
+      <button id="btn-submit-revisi" class="submit-btn" disabled onclick="submitRevisi()">Ajukan Ulang</button>
+      <div id="hasil-submit-revisi"></div>
+    </div>
+  </div>
+
+<script>
+  // ====================================================================
+  // KONFIGURASI — WAJIB DIISI sebelum file ini di-upload ke hosting.
+  // ====================================================================
+  const API_URL = 'https://script.google.com/macros/s/AKfycbxoKpFQGcswc_6iXoag8EeDJAdob6uUQcpZND8RJgVbqvuxa2BlQAhmPuk2myp31rxNTw/exec';
+  const API_TOKEN = 'Inventory_Alat_Murup123!';
+  // ====================================================================
+
+  if (API_URL.indexOf('PASTE_URL') !== -1 || API_TOKEN.indexOf('GANTI-DENGAN') !== -1) {
+    document.getElementById('config-warning').classList.remove('hidden');
+  }
+
+  function callApi(action, payload) {
+    return fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ token: API_TOKEN, action: action, payload: payload || {} })
+    }).then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); });
+  }
+
+  function pilihTab(tab) {
+    document.getElementById('tab-baru').classList.toggle('active', tab === 'baru');
+    document.getElementById('tab-revisi').classList.toggle('active', tab === 'revisi');
+    document.getElementById('panel-baru').classList.toggle('hidden', tab !== 'baru');
+    document.getElementById('panel-revisi').classList.toggle('hidden', tab !== 'revisi');
+  }
+
+  // ---------- AJUKAN BARU ----------
+  let alatDipinjamSemua = []; // hasil dari getAlatDipinjamByEmail
+  let alatDipilihIdx = new Set();
+
+  function muatAlatDipinjam() {
+    const email = document.getElementById('email').value.trim();
+    if (!email) {
+      alert('Isi email dulu, ya — dipakai untuk mencari alat yang sedang kamu pinjam.');
+      return;
+    }
+    document.getElementById('daftar-alat-wrapper').classList.remove('hidden');
+    document.getElementById('daftar-alat-checklist').innerHTML = '<div class="empty-state">Memuat...</div>';
+
+    callApi('getAlatDipinjamByEmail', { email: email }).then(res => {
+      alatDipinjamSemua = res.daftar || [];
+      alatDipilihIdx = new Set();
+      if (alatDipinjamSemua.length === 0) {
+        document.getElementById('daftar-alat-checklist').innerHTML =
+          '<div class="empty-state">Tidak ada alat yang sedang dipinjam atas email ini.</div>';
+        return;
+      }
+      renderChecklistAlat();
+    }).catch(err => {
+      document.getElementById('daftar-alat-checklist').innerHTML =
+        '<div class="status-msg error">Gagal menghubungi server: ' + err.message + '</div>';
+    });
+  }
+
+  function renderChecklistAlat() {
+    const ul = document.getElementById('daftar-alat-checklist');
+    ul.innerHTML = alatDipinjamSemua.map((a, idx) =>
+      '<li class="checkbox-item" onclick="toggleAlatDipilih(' + idx + ')">' +
+        '<input type="checkbox" ' + (alatDipilihIdx.has(idx) ? 'checked' : '') + ' onclick="event.stopPropagation(); toggleAlatDipilih(' + idx + ')">' +
+        '<span>' + a.namaAlat + ' (' + a.idAlat + ')</span>' +
+      '</li>'
+    ).join('');
+    document.getElementById('jumlah-alat').innerText = alatDipilihIdx.size;
+    cekFormValid();
+  }
+
+  function toggleAlatDipilih(idx) {
+    if (alatDipilihIdx.has(idx)) alatDipilihIdx.delete(idx);
+    else alatDipilihIdx.add(idx);
+    renderChecklistAlat();
+  }
+
+  function cekFormValid() {
+    const nama = document.getElementById('nama').value;
+    const email = document.getElementById('email').value;
+    document.getElementById('btn-submit').disabled = !(nama && email && alatDipilihIdx.size > 0);
+  }
+  ['nama', 'email'].forEach(id => document.getElementById(id).addEventListener('input', cekFormValid));
+
+  function submitPengembalian() {
+    const btn = document.getElementById('btn-submit');
+    btn.disabled = true; btn.innerText = 'Memproses...';
+    const daftarAlat = Array.from(alatDipilihIdx).map(idx => alatDipinjamSemua[idx]);
+
+    callApi('submitPengembalian', {
+      nama: document.getElementById('nama').value,
+      email: document.getElementById('email').value,
+      departemen: document.getElementById('departemen').value,
+      daftarAlat: daftarAlat
+    }).then(result => {
+      btn.innerText = 'Ajukan Pengembalian';
+      if (result.success) {
+        document.getElementById('hasil-submit').innerHTML =
+          '<div class="status-msg success">✅ Pengajuan pengembalian dibuat! ID Pengembalian: <b>' + result.idPengembalian + '</b><br>Simpan ID ini untuk cek status atau revisi nanti.</div>';
+      } else {
+        btn.disabled = false;
+        document.getElementById('hasil-submit').innerHTML = '<div class="status-msg error">' + result.message + '</div>';
+      }
+    }).catch(err => {
+      btn.disabled = false; btn.innerText = 'Ajukan Pengembalian';
+      document.getElementById('hasil-submit').innerHTML = '<div class="status-msg error">Gagal menghubungi server: ' + err.message + '</div>';
+    });
+  }
+
+  // ---------- REVISI YANG DITOLAK ----------
+  let alatRevisiSemua = [];
+  let alatRevisiDipilihIdx = new Set();
+  let idPengembalianRevisi = null;
+
+  function muatPengembalianUntukRevisi() {
+    const id = document.getElementById('r-idPengembalian').value.trim();
+    if (!id) return;
+    document.getElementById('info-revisi').innerHTML = '<div class="status-msg">Mencari...</div>';
+    callApi('getPengembalianById', { idPengembalian: id }).then(res => {
+      if (!res.found) {
+        document.getElementById('info-revisi').innerHTML = '<div class="status-msg error">ID Pengembalian tidak ditemukan.</div>';
+        document.getElementById('form-revisi-detail').classList.add('hidden');
+        return;
+      }
+      if (res.data.status !== 'Ditolak - Perlu Revisi (Pengembalian)') {
+        document.getElementById('info-revisi').innerHTML =
+          '<div class="status-msg error">Pengajuan ini berstatus "' + res.data.status + '", cuma yang DITOLAK yang bisa direvisi di sini.</div>';
+        document.getElementById('form-revisi-detail').classList.add('hidden');
+        return;
+      }
+      idPengembalianRevisi = id;
+      alatRevisiSemua = res.data.daftarAlat.slice();
+      alatRevisiDipilihIdx = new Set(alatRevisiSemua.map((a, idx) => idx)); // default semua tercentang
+      document.getElementById('info-revisi').innerHTML = '<div class="status-msg success">✅ Data dimuat. Sesuaikan daftar, lalu ajukan ulang.</div>';
+      document.getElementById('form-revisi-detail').classList.remove('hidden');
+      renderChecklistRevisi();
+    }).catch(err => {
+      document.getElementById('info-revisi').innerHTML = '<div class="status-msg error">Gagal menghubungi server: ' + err.message + '</div>';
+    });
+  }
+
+  function renderChecklistRevisi() {
+    const ul = document.getElementById('r-daftar-alat-checklist');
+    ul.innerHTML = alatRevisiSemua.map((a, idx) =>
+      '<li class="checkbox-item" onclick="toggleAlatRevisiDipilih(' + idx + ')">' +
+        '<input type="checkbox" ' + (alatRevisiDipilihIdx.has(idx) ? 'checked' : '') + ' onclick="event.stopPropagation(); toggleAlatRevisiDipilih(' + idx + ')">' +
+        '<span>' + a.namaAlat + ' (' + a.idAlat + ')</span>' +
+      '</li>'
+    ).join('');
+    document.getElementById('r-jumlah-alat').innerText = alatRevisiDipilihIdx.size;
+    document.getElementById('btn-submit-revisi').disabled = alatRevisiDipilihIdx.size === 0;
+  }
+
+  function toggleAlatRevisiDipilih(idx) {
+    if (alatRevisiDipilihIdx.has(idx)) alatRevisiDipilihIdx.delete(idx);
+    else alatRevisiDipilihIdx.add(idx);
+    renderChecklistRevisi();
+  }
+
+  function submitRevisi() {
+    const btn = document.getElementById('btn-submit-revisi');
+    btn.disabled = true; btn.innerText = 'Memproses...';
+    const daftarAlatBaru = Array.from(alatRevisiDipilihIdx).map(idx => alatRevisiSemua[idx]);
+
+    callApi('resubmitPengembalian', {
+      idPengembalian: idPengembalianRevisi,
+      daftarAlatBaru: daftarAlatBaru
+    }).then(result => {
+      btn.innerText = 'Ajukan Ulang';
+      if (result.success) {
+        document.getElementById('hasil-submit-revisi').innerHTML =
+          '<div class="status-msg success">✅ Berhasil diajukan ulang! Akan direview ulang mulai dari SPV Video Production.</div>';
+      } else {
+        btn.disabled = false;
+        document.getElementById('hasil-submit-revisi').innerHTML = '<div class="status-msg error">' + result.message + '</div>';
+      }
+    }).catch(err => {
+      btn.disabled = false; btn.innerText = 'Ajukan Ulang';
+      document.getElementById('hasil-submit-revisi').innerHTML = '<div class="status-msg error">Gagal menghubungi server: ' + err.message + '</div>';
+    });
+  }
+</script>
+</body>
+</html>
