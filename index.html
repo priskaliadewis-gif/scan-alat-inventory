@@ -21,34 +21,47 @@
     a.menu-btn .title { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
     a.menu-btn .desc { font-size: 13px; opacity: 0.9; margin-top: 4px; }
     #btn-ajukan { background: #2563eb; }
+    #btn-kembalikan { background: #0891b2; }
     #btn-approval { background: #7c3aed; }
     #btn-serah-terima { background: #16a34a; }
-    #btn-scan { background: #ea580c; }
+    #btn-terima-kembali { background: #ca8a04; }
     .footer-note { text-align: center; font-size: 12px; color: #9ca3af; margin-top: 24px; }
+    .section-label { font-size: 12px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; margin: 24px 0 10px; }
   </style>
 </head>
 <body>
   <h1>📦 Sistem Inventory Alat</h1>
   <p class="sub">Pilih halaman sesuai peran kamu</p>
 
+  <div class="section-label">Requester</div>
+
   <a id="btn-ajukan" class="menu-btn" href="ajukan.html">
     <div class="title">📤 Ajukan Peminjaman</div>
-    <div class="desc">Untuk requester — pilih alat & ajukan untuk approval</div>
+    <div class="desc">Pilih alat & ajukan untuk approval</div>
   </a>
+
+  <a id="btn-kembalikan" class="menu-btn" href="kembalikan.html">
+    <div class="title">📦 Kembalikan Alat</div>
+    <div class="desc">Ajukan pengembalian alat yang sedang kamu pinjam</div>
+  </a>
+
+  <div class="section-label">Approver (SPV / Dept Head Production / Dept Head Ops)</div>
 
   <a id="btn-approval" class="menu-btn" href="approval.html">
     <div class="title">✅ Approval</div>
-    <div class="desc">Untuk SPV Video Production, Dept Head Production, Dept Head Ops</div>
+    <div class="desc">Approve/reject pengajuan peminjaman & pengembalian</div>
   </a>
+
+  <div class="section-label">Cam Store</div>
 
   <a id="btn-serah-terima" class="menu-btn" href="serah-terima.html">
     <div class="title">🤝 Serah Terima Alat</div>
-    <div class="desc">Untuk Cam Store — scan & konfirmasi setelah semua approval selesai</div>
+    <div class="desc">Scan & serahkan alat setelah semua approval selesai</div>
   </a>
 
-  <a id="btn-scan" class="menu-btn hidden" href="scan.html" style="display:none">
-    <div class="title">📷 Scan Cepat (tanpa approval)</div>
-    <div class="desc">Pinjam/kembalikan langsung tanpa alur approval</div>
+  <a id="btn-terima-kembali" class="menu-btn" href="terima-kembali.html">
+    <div class="title">📥 Terima Pengembalian</div>
+    <div class="desc">Scan & verifikasi alat yang dikembalikan, tentukan kondisi</div>
   </a>
 
   <p class="footer-note">Bookmark link masing-masing halaman langsung (bukan halaman ini) supaya lebih cepat diakses tiap hari.</p>
