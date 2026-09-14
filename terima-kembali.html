@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Terima Pengembalian - Cam Store</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, Roboto, Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 20px 16px 60px; background: #f5f6f8; color: #1f2430; }
+    h1 { font-size: 20px; margin-bottom: 4px; }
+    p.sub { color: #6b7280; margin-top: 0; font-size: 14px; }
+    .card { background: #fff; border-radius: 12px; padding: 18px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+    .config-warning { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; padding: 12px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; }
+    .hidden { display: none; }
+    label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; color: #374151; }
+    select { width: 100%; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 15px; }
+    .permintaan-header { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
+    .permintaan-meta { font-size: 13px; color: #6b7280; margin-bottom: 10px; }
+    .btn { width: 100%; padding: 12px; border-radius: 8px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 8px; }
+    .btn-primary { background: #111827; color: #fff; }
+    .btn-primary:disabled { background: #9ca3af; cursor: not-allowed; }
+    .back-link { display: inline-block; margin-top: 16px; color: #2563eb; font-size: 14px; cursor: pointer; }
+    .empty-state { text-align: center; color: #9ca3af; padding: 30px 0; font-size: 14px; }
+    .status-msg { margin-top: 14px; padding: 12px; border-radius: 8px; font-size: 14px; white-space: pre-line; }
+    .status-msg.success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+    .status-msg.error { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; }
+    #reader-terima { border-radius: 10px; overflow: hidden; margin-top: 12px; }
+    .checklist { list-style: none; padding: 0; margin: 10px 0; }
+    .checklist li {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; background: #f9fafb; border: 1px solid #e5e7eb;
+      border-radius: 8px; margin-bottom: 6px; font-size: 14px;
+    }
+    .checklist li.done { background: #f0fdf4; border-color: #bbf7d0; }
+    .checkmark { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #d1d5db; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #fff; }
+    .checklist li.done .checkmark { background: #16a34a; border-color: #16a34a; }
+    .progress-badge { display: inline-block; background: #7c3aed; color: #fff; border-radius: 999px; padding: 2px 10px; font-size: 13px; font-weight: 600; }
+    .info-box { margin-top: 10px; padding: 10px; border-radius: 8px; font-size: 13px; background: #f0f9ff; border: 1px solid #bae6fd; }
+    .info-box.error { background: #fef2f2; border-color: #fecaca; color: #b91c1c; }
+  </style>
+</head>
+<body>
+  <h1>Terima Pengembalian Alat</h1>
+  <p class="sub">Cam Store — verifikasi fisik & tentukan kondisi alat yang kembali</p>
+
+  <div id="config-warning" class="config-warning hidden">
+    ⚠️ <b>API_URL / API_TOKEN belum diisi.</b> Buka file ini, isi <code>const API_URL</code> dan <code>const API_TOKEN</code> di awal &lt;script&gt;.
+  </div>
+
+  <div id="panel-daftar">
+    <div id="daftar-pengembalian"><div class="empty-state">Memuat...</div></div>
+  </div>
+
+  <div id="panel-detail" class="card hidden">
+    <div class="permintaan-header" id="d-header"></div>
+    <div class="permintaan-meta" id="d-meta"></div>
+
+    <div>Progress: <span class="progress-badge" id="d-progress">0/0</span></div>
+    <ul class="checklist" id="d-checklist"></ul>
+
+    <label>Scan Alat Satu Per Satu</label>
+    <div id="reader-terima"></div>
+    <div id="d-scan-info"></div>
+
+    <label>Kondisi Alat Saat Diterima (berlaku untuk semua alat di atas)</label>
+    <select id="d-kondisi">
+      <option value="Baik">Baik</option>
+      <option value="Perlu Cek">Perlu Cek</option>
+      <option value="Rusak">Rusak</option>
+    </select>
+
+    <button id="btn-konfirmasi" class="btn btn-primary" disabled onclick="konfirmasiPenerimaan()">Konfirmasi Terima Alat</button>
+    <div id="d-hasil"></div>
+
+    <div class="back-link" onclick="kembaliKeDaftar()">← Kembali ke daftar</div>
+  </div>
+
+<script>
+  // ====================================================================
+  // KONFIGURASI — WAJIB DIISI sebelum file ini di-upload ke hosting.
+  // ====================================================================
+  const API_URL = 'https://script.google.com/macros/s/AKfycbxoKpFQGcswc_6iXoag8EeDJAdob6uUQcpZND8RJgVbqvuxa2BlQAhmPuk2myp31rxNTw/exec';
+  const API_TOKEN = 'Inventory_Alat_Murup123!';
+  // ====================================================================
+
+  if (API_URL.indexOf('PASTE_URL') !== -1 || API_TOKEN.indexOf('GANTI-DENGAN') !== -1) {
+    document.getElementById('config-warning').classList.remove('hidden');
+  }
+
+  function callApi(action, payload) {
+    return fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ token: API_TOKEN, action: action, payload: payload || {} })
+    }).then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); });
+  }
+
+  let currentScanner = null;
+  let pengembalianAktif = null;
+  let sudahDiscan = new Set();
+  let lastScanTime = 0;
+  const JEDA_SCAN_MS = 1200;
+
+  function muatDaftar() {
+    const div = document.getElementById('daftar-pengembalian');
+    div.innerHTML = '<div class="empty-state">Memuat...</div>';
+    callApi('getPengembalianSiapDiterima', {}).then(res => {
+      if (!res.success) { div.innerHTML = '<div class="status-msg error">' + res.message + '</div>'; return; }
+      if (res.daftar.length === 0) {
+        div.innerHTML = '<div class="empty-state">Tidak ada pengembalian yang siap diterima saat ini.</div>';
+        return;
+      }
+      div.innerHTML = res.daftar.map(p =>
+        '<div class="card">' +
+          '<div class="permintaan-header">' + p.idPengembalian + '</div>' +
+          '<div class="permintaan-meta">' + p.nama + ' &middot; ' + p.departemen +
+          '<br>' + p.daftarAlat.length + ' alat</div>' +
+          '<button class="btn btn-primary" onclick="bukaDetail(\'' + p.idPengembalian + '\')">Proses Terima Alat</button>' +
+        '</div>'
+      ).join('');
+      window._daftarSiapDiterima = res.daftar;
+    }).catch(err => {
+      div.innerHTML = '<div class="status-msg error">Gagal menghubungi server: ' + err.message + '</div>';
+    });
+  }
+
+  function bukaDetail(idPengembalian) {
+    const p = (window._daftarSiapDiterima || []).find(x => x.idPengembalian === idPengembalian);
+    if (!p) return;
+    pengembalianAktif = p;
+    sudahDiscan = new Set();
+
+    document.getElementById('panel-daftar').classList.add('hidden');
+    document.getElementById('panel-detail').classList.remove('hidden');
+    document.getElementById('d-header').innerText = p.idPengembalian;
+    document.getElementById('d-meta').innerText = p.nama + ' · ' + p.departemen;
+    document.getElementById('d-scan-info').innerHTML = '';
+    document.getElementById('d-hasil').innerHTML = '';
+    document.getElementById('d-kondisi').value = 'Baik';
+    renderChecklist();
+
+    currentScanner = new Html5Qrcode('reader-terima');
+    currentScanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: 220 },
+      (decodedText) => onScanTerima(decodedText.trim()),
+      () => {}
+    ).catch(() => {
+      document.getElementById('reader-terima').innerHTML =
+        '<div class="info-box error">Tidak bisa akses kamera. Pastikan izin kamera diaktifkan di browser.</div>';
+    });
+  }
+
+  function kembaliKeDaftar() {
+    if (currentScanner) { currentScanner.stop().catch(() => {}); currentScanner = null; }
+    pengembalianAktif = null;
+    sudahDiscan = new Set();
+    document.getElementById('panel-detail').classList.add('hidden');
+    document.getElementById('panel-daftar').classList.remove('hidden');
+    muatDaftar();
+  }
+
+  function onScanTerima(idAlat) {
+    const now = Date.now();
+    if (now - lastScanTime < JEDA_SCAN_MS) return;
+    lastScanTime = now;
+
+    const adaDiDaftar = pengembalianAktif.daftarAlat.some(a => String(a.idAlat).trim() === idAlat);
+    const div = document.getElementById('d-scan-info');
+
+    if (!adaDiDaftar) {
+      div.innerHTML = '<div class="info-box error">Alat "' + idAlat + '" bukan bagian dari pengajuan ini.</div>';
+      return;
+    }
+    if (sudahDiscan.has(idAlat)) {
+      div.innerHTML = '<div class="info-box">Alat "' + idAlat + '" sudah discan sebelumnya.</div>';
+      return;
+    }
+    sudahDiscan.add(idAlat);
+    div.innerHTML = '<div class="info-box">✅ "' + idAlat + '" ditandai sudah diterima.</div>';
+    renderChecklist();
+  }
+
+  function renderChecklist() {
+    const ul = document.getElementById('d-checklist');
+    ul.innerHTML = pengembalianAktif.daftarAlat.map(a => {
+      const done = sudahDiscan.has(String(a.idAlat).trim());
+      return '<li class="' + (done ? 'done' : '') + '"><span class="checkmark">' + (done ? '✓' : '') + '</span>' + a.namaAlat + ' (' + a.idAlat + ')</li>';
+    }).join('');
+    const total = pengembalianAktif.daftarAlat.length;
+    const jumlahDone = sudahDiscan.size;
+    document.getElementById('d-progress').innerText = jumlahDone + '/' + total;
+    document.getElementById('btn-konfirmasi').disabled = jumlahDone !== total;
+  }
+
+  function konfirmasiPenerimaan() {
+    const btn = document.getElementById('btn-konfirmasi');
+    btn.disabled = true; btn.innerText = 'Memproses...';
+    callApi('konfirmasiPenerimaanAlat', {
+      idPengembalian: pengembalianAktif.idPengembalian,
+      daftarAlatTerscan: Array.from(sudahDiscan),
+      kondisi: document.getElementById('d-kondisi').value
+    }).then(res => {
+      btn.innerText = 'Konfirmasi Terima Alat';
+      if (res.success) {
+        document.getElementById('d-hasil').innerHTML =
+          '<div class="status-msg success">✅ Alat resmi diterima & tercatat "Tersedia" kembali.</div>';
+        if (currentScanner) { currentScanner.stop().catch(() => {}); currentScanner = null; }
+        setTimeout(kembaliKeDaftar, 2000);
+      } else {
+        btn.disabled = false;
+        document.getElementById('d-hasil').innerHTML = '<div class="status-msg error">' + res.message + '</div>';
+      }
+    }).catch(err => {
+      btn.disabled = false; btn.innerText = 'Konfirmasi Terima Alat';
+      document.getElementById('d-hasil').innerHTML = '<div class="status-msg error">Gagal menghubungi server: ' + err.message + '</div>';
+    });
+  }
+
+  muatDaftar();
+</script>
+</body>
+</html>
